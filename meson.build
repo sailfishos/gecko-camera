@@ -40,7 +40,12 @@ if get_option('build-devel') == true or get_option('build-tests') == true
       dependencies: cc.find_library('dl', required : false),
       version: libgeckocamera_so_version )
 
-  install_headers('geckocamera.h', subdir : meson.project_name())
+  geckocamera_headers = [
+    'geckocamera.h',
+    'geckocamera-utils.h',
+  ]
+
+  install_headers(geckocamera_headers, subdir : meson.project_name())
 
   import('pkgconfig').generate(
       libgeckocamera_so,

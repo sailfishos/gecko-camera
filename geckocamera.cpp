@@ -22,7 +22,7 @@
 #include <filesystem>
 
 #include "geckocamera.h"
-#include "utils.h"
+#include "geckocamera-utils.h"
 
 namespace gecko {
 namespace camera {
@@ -55,7 +55,7 @@ private:
 bool RootCameraManager::init()
 {
     if (!initialized) {
-        LogInit("gecko-camera", getenv("GECKO_CAMERA_DEBUG") ? kLogDebug : kLogInfo);
+        LogInit("gecko-camera", getenv("GECKO_CAMERA_DEBUG") ? LogDebug : LogInfo);
         filesystem::directory_entry pluginDir(GECKO_CAMERA_PLUGIN_DIR);
         if (pluginDir.exists() && pluginDir.is_directory()) {
             for (const auto &entry : filesystem::directory_iterator(GECKO_CAMERA_PLUGIN_DIR)) {

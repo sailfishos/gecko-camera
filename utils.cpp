@@ -20,18 +20,22 @@
 #include <cstring>
 #include <iostream>
 
-#include "utils.h"
+#include "geckocamera-utils.h"
+
+using namespace std;
 
 namespace gecko {
 namespace camera {
 namespace internal {
 
-class SysLogBuffer : public std::basic_streambuf<char, std::char_traits<char>>
+static bool logInitialized = false;
+
+class SysLogBuffer : public basic_streambuf<char, char_traits<char>>
 {
 public:
-    explicit SysLogBuffer(std::string ident, LogLevel level)
+    explicit SysLogBuffer(string ident, LogLevel level)
         : logLevel(level)
-        , lineLevel(kLogDebug)
+        , lineLevel(LogDebug)
     {
         strncpy(logTag, ident.c_str(), sizeof(logTag));
         logTag[sizeof(logTag) - 1] = 0;
@@ -50,14 +54,14 @@ protected:
             syslog(syslogLevel(lineLevel), "%s", buffer.c_str());
             buffer.erase();
         }
-        lineLevel = kLogDebug;
+        lineLevel = LogDebug;
         return 0;
     }
 
-    std::streamsize xsputn(const char *buf, std::streamsize sz)
+    streamsize xsputn(const char *buf, streamsize sz)
     {
         if (lineLevel >= logLevel) {
-            buffer += std::string(buf, sz);
+            buffer += string(buf, sz);
         }
         return sz;
     }
@@ -78,17 +82,17 @@ private:
     static int syslogLevel(LogLevel level)
     {
         switch (level) {
-        case kLogError:
+        case LogError:
             return LOG_ERR;
-        case kLogInfo:
+        case LogInfo:
             return LOG_INFO;
-        case kLogDebug:
+        case LogDebug:
             return LOG_DEBUG;
         }
         return LOG_DEBUG;
     }
 
-    std::string buffer;
+    string buffer;
     char logTag[32];
     LogLevel logLevel;
     LogLevel lineLevel;
@@ -96,15 +100,18 @@ private:
 
 } // namespace internal
 
-void LogInit(std::string logTag, LogLevel logLevel)
+void LogInit(string logTag, LogLevel logLevel)
 {
-    std::clog.rdbuf(new internal::SysLogBuffer(logTag, logLevel));
+    if (!internal::logInitialized) {
+        clog.rdbuf(new internal::SysLogBuffer(logTag, logLevel));
+        internal::logInitialized = true;
+    }
 }
 
 } // namespace camera
 } // namespace gecko
 
-std::ostream &operator<< (std::ostream &os, const gecko::camera::LogLevel &level)
+ostream &operator<< (ostream &os, const gecko::camera::LogLevel &level)
 {
     static_cast<gecko::camera::internal::SysLogBuffer *>(os.rdbuf())->setLineLevel(level);
     return os;

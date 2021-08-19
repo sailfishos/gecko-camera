@@ -25,9 +25,9 @@ namespace gecko {
 namespace camera {
 
 enum LogLevel {
-    kLogDebug = 0,
-    kLogInfo,
-    kLogError
+    LogDebug = 0,
+    LogInfo,
+    LogError
 };
 
 void LogInit(std::string logTag, enum LogLevel logLevel);
@@ -45,14 +45,14 @@ void LogInit(std::string logTag, enum LogLevel logLevel);
 #endif
 
 #ifdef VERBOSE_LOGGING
-#define LOGV(x) LOG(kLogDebug, x)
+#define LOGV(x) LOG(gecko::camera::LogDebug, x)
 #else
 #define LOGV(x) do {} while (0)
 #endif
 
-#define LOGD(x) LOG(kLogDebug, x)
-#define LOGI(x) LOG(kLogInfo, x)
-#define LOGE(x) LOG(kLogError, x)
+#define LOGD(x) LOG(gecko::camera::LogDebug, x)
+#define LOGI(x) LOG(gecko::camera::LogInfo, x)
+#define LOGE(x) LOG(gecko::camera::LogError, x)
 
 } // namespace camera
 } // namespace gecko
