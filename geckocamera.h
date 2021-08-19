@@ -80,7 +80,7 @@ public:
     }
 
 protected:
-    CameraListener *cameraListener;
+    CameraListener *cameraListener = nullptr;
 };
 
 class CameraManager
