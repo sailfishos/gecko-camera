@@ -667,7 +667,7 @@ bool DroidCameraParams::setCapability(CameraCapability cap)
 
 static DroidCameraManager droidCameraManager;
 
-extern "C" __attribute__((visibility("default"))) CameraManager *gecko_camera_manager(void)
+extern "C" __attribute__((visibility("default"))) CameraManager *gecko_camera_plugin_manager(void)
 {
     return &droidCameraManager;
 }

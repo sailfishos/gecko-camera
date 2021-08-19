@@ -135,9 +135,9 @@ shared_ptr<CameraManager> RootCameraManager::loadPlugin(string path)
     // Clear error
     dlerror();
 
-    void *handle = dlopen(path.c_str(), RTLD_LAZY);
+    void *handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
     if (handle) {
-        CameraManager* (*_manager)() = (CameraManager * (*)())dlsym(handle, "gecko_camera_manager");
+        CameraManager* (*_manager)() = (CameraManager * (*)())dlsym(handle, "gecko_camera_plugin_manager");
         if (_manager) {
             CameraManager *manager = _manager();
             if (manager) {
