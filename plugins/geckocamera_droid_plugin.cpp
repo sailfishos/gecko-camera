@@ -518,6 +518,7 @@ DroidCameraBuffer::DroidCameraBuffer(
     cb = ycbcr->cb;
     cr = ycbcr->cr;
     yStride = ycbcr->ystride;
+    height = camera->currentParameters->currentCapability.height;
     cStride = ycbcr->cstride;
     chromaStep = ycbcr->chroma_step;
     timestampMs = droid_media_buffer_get_timestamp(buffer);
@@ -542,6 +543,7 @@ DroidCameraBuffer::DroidCameraBuffer(
     cb = (char *)y + (off_t)tmpl.cb;
     cr = (char *)y + (off_t)tmpl.cr;
     yStride = tmpl.ystride;
+    height = camera->currentParameters->currentCapability.height;
     cStride = tmpl.cstride;
     chromaStep = tmpl.chroma_step;
     timestampMs = droid_media_camera_recording_frame_get_timestamp(data);
@@ -641,7 +643,6 @@ bool DroidCameraParams::setCapability(CameraCapability cap)
         // Inoi R7 produces QOMX_COLOR_FormatYUV420PackedSemiPlanar32m
         unsigned int stride_w = _ALIGN_SIZE(cap.width, 128);
         unsigned int stride_h = _ALIGN_SIZE(cap.height, 32);
-        ycrcbTemplate.y = 0;
         ycrcbTemplate.cb = (void *)(stride_w * stride_h);
         ycrcbTemplate.cr = (void *)(stride_w * stride_h + 1);
         ycrcbTemplate.ystride = stride_w;
@@ -649,13 +650,13 @@ bool DroidCameraParams::setCapability(CameraCapability cap)
         ycrcbTemplate.chroma_step = 2;
     } else {
         // Default is I420
-        ycrcbTemplate.y = 0;
         ycrcbTemplate.cr = (void *)(cap.width * cap.height);
         ycrcbTemplate.cb = (char *)ycrcbTemplate.cr + (cap.width * cap.height) / 4;
         ycrcbTemplate.ystride = cap.width;
         ycrcbTemplate.cstride = cap.width / 2;
         ycrcbTemplate.chroma_step = 1;
     }
+    ycrcbTemplate.y = 0;
 
 #undef _ALIGN_SIZE
 

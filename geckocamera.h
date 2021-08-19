@@ -55,6 +55,7 @@ struct CameraFrame {
     size_t cStride;
     size_t chromaStep;
     uint64_t timestampMs;
+    size_t height;
 };
 
 class CameraListener
