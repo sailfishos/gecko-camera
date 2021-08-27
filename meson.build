@@ -16,7 +16,7 @@ cc = meson.get_compiler('cpp')
 
 root_dir = include_directories('.')
 
-plugins_install_dir = '/'.join([ get_option('datadir'), meson.project_name(), 'plugins'])
+plugins_install_dir = '/'.join([ get_option('libdir'), meson.project_name(), 'plugins'])
 add_project_arguments(['-DGECKO_CAMERA_PLUGIN_DIR="' +
                        '/'.join([get_option('prefix'), plugins_install_dir]) + '"'],
                        language: 'cpp')

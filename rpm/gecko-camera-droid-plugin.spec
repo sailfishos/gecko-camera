@@ -27,4 +27,4 @@ meson rewrite kwargs set project / version %{version}-%{release}
 
 %files
 %license LICENSE
-%{_datadir}/gecko-camera/plugins/libgeckocamera-droid.so
+%{_libdir}/gecko-camera/plugins/libgeckocamera-droid.so
