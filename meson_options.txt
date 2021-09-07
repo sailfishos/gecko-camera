@@ -1,4 +1,5 @@
 option('build-droid-plugin', type : 'boolean', value : false, description : 'Build droid plugin')
+option('build-dummy-plugin', type : 'boolean', value : false, description : 'Build dummy plugin')
 option('build-devel', type : 'boolean', value : true, description : 'Build the development package')
 option('build-tests', type : 'boolean', value : true, description : 'Build tests')
 option('build-examples', type : 'boolean', value : true, description : 'Build examples')

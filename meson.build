@@ -39,7 +39,8 @@ if get_option('build-devel') == true or get_option('build-tests') == true
       'geckocamera',
       geckocamera_source,
       install: true,
-      dependencies: cc.find_library('dl', required : false),
+      dependencies: [ cc.find_library('dl', required : false),
+                      dependency('threads') ],
       version: libgeckocamera_so_version )
 
   geckocamera_headers = [
@@ -62,4 +63,8 @@ endif
 
 if get_option('build-droid-plugin')
   subdir('plugins/droid')
+endif
+
+if get_option('build-dummy-plugin')
+  subdir('plugins/dummy')
 endif
