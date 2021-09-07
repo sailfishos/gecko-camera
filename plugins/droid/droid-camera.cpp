@@ -27,7 +27,7 @@
 
 #include "geckocamera.h"
 
-#define LOG_TOPIC "gecko-camera-droid"
+#define LOG_TOPIC "droid-camera"
 #include "geckocamera-utils.h"
 
 using namespace std;

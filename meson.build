@@ -59,6 +59,6 @@ if get_option('build-examples') == true
   subdir('examples')
 endif
 
-if get_option('build-plugins')
-  subdir('plugins')
+if get_option('build-droid-plugin')
+  subdir('plugins/droid')
 endif

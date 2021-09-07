@@ -18,7 +18,7 @@ A library to simplify video capture, droidmedia-based plugin.
 %autosetup
 
 %build
-%meson -Dbuild-tests=false -Dbuild-examples=false -Dbuild-devel=false -Dbuild-plugins=true
+%meson -Dbuild-tests=false -Dbuild-examples=false -Dbuild-devel=false -Dbuild-droid-plugin=true
 meson rewrite kwargs set project / version %{version}-%{release}
 %meson_build
 
