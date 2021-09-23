@@ -350,21 +350,35 @@ bool DroidCamera::queryCapabilities(vector<CameraCapability> &caps)
     if (handle) {
         shared_ptr<DroidCameraParams> params;
         if (getParameters(params)) {
+            const char *maxResolution = getenv("GECKO_CAMERA_MAX_RESOLUTION");
+            unsigned int maxWidth, maxHeight;
+
+            if (!maxResolution ||
+                2 != sscanf(maxResolution, "%ux%u", &maxWidth, &maxHeight)) {
+                // Defaults to reasonable values
+                maxWidth = 640;
+                maxHeight = 480;
+            }
+            LOGD(this << "max resolution: " << maxWidth << "x" << maxHeight);
             for (string res : params->getValues("video-size-values")) {
                 CameraCapability cap;
-                int width, height;
+                unsigned int width, height;
 
-                if (2 != sscanf(res.c_str(), "%dx%d", &width, &height)) {
+                if (2 != sscanf(res.c_str(), "%ux%u", &width, &height)) {
                     return false;
                 }
 
-                LOGD(this << "supports pixel mode " << width << "x" << height);
+                if (width <= maxWidth && height <= maxHeight) {
+                    LOGD(this << "supports pixel mode " << width << "x" << height);
 
-                cap.width = width;
-                cap.height = height;
-                // FIXME: Is fps fixed?
-                cap.fps = 30;
-                caps.push_back(cap);
+                    cap.width = width;
+                    cap.height = height;
+                    // FIXME: Is fps fixed?
+                    cap.fps = 30;
+                    caps.push_back(cap);
+                } else {
+                    LOGD(this << "skip pixel mode " << width << "x" << height);
+                }
             }
             return true;
         }
