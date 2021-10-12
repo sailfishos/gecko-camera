@@ -20,6 +20,8 @@
 #include <memory>
 #include <thread>
 
+#include <getopt.h>
+
 #include "geckocamera.h"
 
 using namespace std;
@@ -30,7 +32,7 @@ class GeckoCameraExample : CameraListener
 public:
     GeckoCameraExample() : manager(gecko_camera_manager()) {}
 
-    int run()
+    int run(unsigned int cameraNumber, unsigned int modeNumber, unsigned int durationSeconds)
     {
         vector<CameraInfo> cameraList;
 
@@ -50,29 +52,31 @@ public:
 
         cout << cameraList.size() << " cameras found\n";
 
-        if (cameraList.size()) {
-            CameraInfo info = cameraList.at(0);
+        if (cameraNumber < cameraList.size()) {
+            CameraInfo info = cameraList.at(cameraNumber);
             vector<CameraCapability> caps;
-            if (manager->queryCapabilities(info.id, caps)) {
+            if (manager->queryCapabilities(info.id, caps) && modeNumber < caps.size()) {
                 cout << "Camera " << info.id << " caps:\n";
                 for (auto cap : caps) {
                     cout << "    " << cap.width << "x" << cap.height << ":" << cap.fps << "\n";
                 }
 
                 shared_ptr<Camera> camera;
-                if (manager->openCamera(cameraList.at(0).id, camera)) {
+                if (manager->openCamera(info.id, camera)) {
                     camera->setListener(this);
-                    if (camera->startCapture(caps.at(0))) {
-                        this_thread::sleep_for(chrono::seconds(10));
+                    if (camera->startCapture(caps.at(modeNumber))) {
+                        this_thread::sleep_for(chrono::seconds(durationSeconds));
                         camera->stopCapture();
                         return 0;
                     } else {
-                        cout << "Cannot start capture\n";
+                        cerr << "Cannot start capture\n";
                     }
                 }
             } else {
-                cout << "Camera 0 doesn't provide capabilities\n";
+                cerr << "Camera has no mode " << modeNumber << "\n";
             }
+        } else {
+            cerr << "Camera numer " << cameraNumber << " not found\n";
         }
         return -1;
     }
@@ -92,8 +96,30 @@ private:
 
 int main(int argc, char *argv[])
 {
+    int opt;
+    unsigned int cameraNumber = 0;
+    // Do not use maximum resolution
+    unsigned int modeNumber = 1;
+    unsigned int durationSeconds = 10;
+
+    while ((opt = getopt(argc, argv, "c:m:t:")) != -1) {
+        switch (opt) {
+        case 'c':
+            cameraNumber = atoi(optarg);
+            break;
+        case 'm':
+            modeNumber = atoi(optarg);
+            break;
+        case 't':
+            durationSeconds = atoi(optarg);
+            break;
+        default:
+            break;
+        }
+    }
+
     GeckoCameraExample app;
-    return app.run();
+    return app.run(cameraNumber, modeNumber, durationSeconds);
 }
 
 /* vim: set ts=4 et sw=4 tw=80: */
