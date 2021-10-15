@@ -145,7 +145,7 @@ std::ostream &operator<<(std::ostream &os, DroidCamera *camera)
 {
     CameraInfo info;
     camera->getInfo(info);
-    os << " (" << info.name << ") ";
+    os << " (" << info.name << " 0x" << hex << (unsigned long)camera << dec << ") ";
     return os;
 }
 
@@ -347,7 +347,7 @@ bool DroidCamera::applyParameters(void)
 
 bool DroidCamera::queryCapabilities(vector<CameraCapability> &caps)
 {
-    if (handle) {
+    if (open()) {
         shared_ptr<DroidCameraParams> params;
         if (getParameters(params)) {
             for (string res : params->getValues("video-size-values")) {
@@ -378,7 +378,11 @@ void DroidCamera::close()
     LOGI(this);
 
     if (handle) {
-        stopCapture();
+        if (started) {
+            droid_media_camera_stop_recording(handle);
+            droid_media_camera_stop_preview(handle);
+            started = false;
+        }
         if (locked) {
             droid_media_camera_unlock(handle);
             locked = false;
@@ -391,6 +395,11 @@ void DroidCamera::close()
 bool DroidCamera::startCapture(const CameraCapability &cap)
 {
     LOGI(this);
+
+    if (!open()) {
+        LOGE(this << "Cannot reopen the device");
+        return false;
+    }
 
     if (!started) {
         if (droid_media_camera_lock(handle)) {
@@ -420,19 +429,14 @@ bool DroidCamera::startCapture(const CameraCapability &cap)
 
 err_unlock:
     LOGE(this << "Failed to start capture");
-    droid_media_camera_unlock(handle);
-    locked = false;
+    close();
     return false;
 }
 
 bool DroidCamera::stopCapture()
 {
-    if (started) {
-        LOGI(this);
-        droid_media_camera_stop_recording(handle);
-        droid_media_camera_stop_preview(handle);
-        started = false;
-    }
+    LOGI(this);
+    close();
     return true;
 }
 
