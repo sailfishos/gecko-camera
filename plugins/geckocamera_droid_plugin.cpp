@@ -119,7 +119,6 @@ private:
     DroidMediaCamera *handle;
 
     bool started;
-    bool locked;
 
     void close();
 
@@ -261,7 +260,6 @@ DroidCamera::DroidCamera(CameraManager *manager, int cameraNumber)
     , manager(manager)
     , handle(nullptr)
     , started(false)
-    , locked(false)
 {
 }
 
@@ -383,10 +381,6 @@ void DroidCamera::close()
             droid_media_camera_stop_preview(handle);
             started = false;
         }
-        if (locked) {
-            droid_media_camera_unlock(handle);
-            locked = false;
-        }
         droid_media_camera_disconnect(handle);
         handle = nullptr;
     }
@@ -403,8 +397,6 @@ bool DroidCamera::startCapture(const CameraCapability &cap)
 
     if (!started) {
         if (droid_media_camera_lock(handle)) {
-            locked = true;
-
             shared_ptr<DroidCameraParams> params;
             if (!getParameters(params) || !params->setCapability(cap)) {
                 goto err_unlock;
