@@ -19,10 +19,11 @@
 #include <map>
 #include <cstring>
 #include <sstream>
+#include <iostream>
+#include <mutex>
+
 #include <droidmedia.h>
 #include <droidmediacamera.h>
-
-#include <iostream>
 
 #include "geckocamera.h"
 
@@ -34,6 +35,12 @@ using namespace gecko::camera;
 
 class DroidCamera;
 class DroidCameraParams;
+
+struct DroidCameraItem {
+    CameraInfo info;
+    vector<CameraCapability> caps;
+    weak_ptr<DroidCamera> runningInstance;
+};
 
 class DroidCameraManager : public CameraManager
 {
@@ -48,11 +55,14 @@ public:
                            vector<CameraCapability> &caps);
     bool openCamera(string cameraId, shared_ptr<Camera> &camera);
 
+    bool getCaptureAccess(shared_ptr<DroidCamera>, bool exclusiveAccess);
+
 private:
     bool initialized = false;
-    vector<CameraInfo> cameraList;
+    vector<DroidCameraItem> cameraList;
     bool findCameras();
     int cameraIndexById(string cameraId) const;
+    mutex managerLock;
 };
 
 class DroidCameraBuffer : public CameraFrame
@@ -95,16 +105,17 @@ private:
 class DroidCamera : public Camera, public enable_shared_from_this<DroidCamera>
 {
 public:
-    static shared_ptr<DroidCamera> create(CameraManager *manager, int num)
+    static shared_ptr<DroidCamera> create(DroidCameraManager *manager, int num)
     {
         return make_shared<DroidCamera>(manager, num);
     }
-    explicit DroidCamera(CameraManager *manager, int cameraNumber);
+    explicit DroidCamera(DroidCameraManager *manager, int cameraNumber);
     ~DroidCamera()
     {
-        close();
+        stopCapture();
     };
 
+    int getNumber();
     bool getInfo(CameraInfo &info);
     bool startCapture(const CameraCapability &cap);
     bool stopCapture();
@@ -115,12 +126,15 @@ public:
 
 private:
     int cameraNumber;
-    CameraManager *manager;
+    DroidCameraManager *manager;
     DroidMediaCamera *handle;
+    mutex cameraLock;
 
     bool started;
+    bool exclusiveAccess;
 
-    void close();
+    bool openUnlocked();
+    void closeUnlocked();
 
     shared_ptr<DroidCameraParams> currentParameters;
     bool getParameters(shared_ptr<DroidCameraParams> &params);
@@ -195,7 +209,7 @@ bool DroidCameraManager::findCameras()
                 }
                 info.provider = "droid";
                 info.mountAngle = droidInfo.orientation;
-                cameraList.push_back(info);
+                cameraList.push_back(DroidCameraItem{info});
             }
         }
     }
@@ -210,7 +224,7 @@ int DroidCameraManager::getNumberOfCameras()
 bool DroidCameraManager::getCameraInfo(unsigned int num, CameraInfo &info)
 {
     if (num < cameraList.size()) {
-        info = cameraList.at(num);
+        info = cameraList.at(num).info;
         return true;
     }
     return false;
@@ -219,8 +233,8 @@ bool DroidCameraManager::getCameraInfo(unsigned int num, CameraInfo &info)
 int DroidCameraManager::cameraIndexById(string cameraId) const
 {
     int num = 0;
-    for (auto info : cameraList) {
-        if (cameraId == info.id) {
+    for (auto entry : cameraList) {
+        if (cameraId == entry.info.id) {
             return num;
         }
         num++;
@@ -234,9 +248,16 @@ bool DroidCameraManager::queryCapabilities(
 {
     int num = cameraIndexById(cameraId);
     if (num >= 0) {
-        auto droidCamera = DroidCamera::create(this, num);
-        if (droidCamera->open()) {
-            return droidCamera->queryCapabilities(caps);
+        DroidCameraItem &entry = cameraList.at(num);
+        if (entry.caps.size()) {
+            caps = entry.caps;
+            return true;
+        } else {
+            auto droidCamera = DroidCamera::create(this, num);
+            if (droidCamera->open() && droidCamera->queryCapabilities(caps)) {
+                entry.caps = caps;
+                return true;
+            }
         }
     }
     return false;
@@ -255,12 +276,47 @@ bool DroidCameraManager::openCamera(string cameraId, shared_ptr<Camera> &camera)
     return false;
 }
 
-DroidCamera::DroidCamera(CameraManager *manager, int cameraNumber)
+bool DroidCameraManager::getCaptureAccess(shared_ptr<DroidCamera> camera, bool exclusive)
+{
+    scoped_lock lock(managerLock);
+
+    if (exclusive) {
+        // Stop all other cameras
+        for (unsigned int i = 0; i < cameraList.size(); i++) {
+            DroidCameraItem &entry = cameraList.at(i);
+            shared_ptr<DroidCamera> runningCamera = entry.runningInstance.lock();
+            if (runningCamera && runningCamera != camera) {
+                runningCamera->stopCapture();
+            }
+            entry.runningInstance.reset();
+        }
+    }
+
+    int num = camera->getNumber();
+    if (num >= 0 && num < cameraList.size()) {
+        DroidCameraItem &entry = cameraList.at(num);
+        shared_ptr<DroidCamera> runningCamera = entry.runningInstance.lock();
+        if (runningCamera && runningCamera != camera) {
+            runningCamera->stopCapture();
+        }
+        entry.runningInstance = weak_ptr<DroidCamera>(camera);
+        return true;
+    }
+    return false;
+}
+
+DroidCamera::DroidCamera(DroidCameraManager *manager, int cameraNumber)
     : cameraNumber(cameraNumber)
     , manager(manager)
     , handle(nullptr)
     , started(false)
+    , exclusiveAccess(false)
 {
+}
+
+int DroidCamera::getNumber()
+{
+    return cameraNumber;
 }
 
 bool DroidCamera::getInfo(CameraInfo &info)
@@ -270,11 +326,21 @@ bool DroidCamera::getInfo(CameraInfo &info)
 
 bool DroidCamera::open()
 {
+    scoped_lock lock(cameraLock);
+    return openUnlocked();
+}
+
+bool DroidCamera::openUnlocked()
+{
     if (handle) {
         return true;
     }
 
-    LOGI(this);
+    LOGI(this << "exclusive access: " << exclusiveAccess);
+
+    if (!manager->getCaptureAccess(shared_from_this(), exclusiveAccess)) {
+        return false;
+    }
 
     handle = droid_media_camera_connect(cameraNumber);
     if (handle) {
@@ -313,6 +379,14 @@ bool DroidCamera::open()
         droid_media_camera_set_callbacks(handle, &camera_cb, this);
         return true;
     }
+
+    // HAL may not support multi camera feature. Let's close other cameras
+    // and try again.
+    if (!exclusiveAccess) {
+        exclusiveAccess = true;
+        return openUnlocked();
+    }
+
     LOGE(this << "Error connecting the camera");
     return false;
 }
@@ -371,7 +445,7 @@ bool DroidCamera::queryCapabilities(vector<CameraCapability> &caps)
     return false;
 }
 
-void DroidCamera::close()
+void DroidCamera::closeUnlocked()
 {
     LOGI(this);
 
@@ -388,9 +462,11 @@ void DroidCamera::close()
 
 bool DroidCamera::startCapture(const CameraCapability &cap)
 {
+    scoped_lock lock(cameraLock);
+
     LOGI(this);
 
-    if (!open()) {
+    if (!openUnlocked()) {
         LOGE(this << "Cannot reopen the device");
         return false;
     }
@@ -421,14 +497,16 @@ bool DroidCamera::startCapture(const CameraCapability &cap)
 
 err_unlock:
     LOGE(this << "Failed to start capture");
-    close();
+    closeUnlocked();
     return false;
 }
 
 bool DroidCamera::stopCapture()
 {
+    scoped_lock lock(cameraLock);
+
     LOGI(this);
-    close();
+    closeUnlocked();
     return true;
 }
 
