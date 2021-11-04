@@ -9,7 +9,7 @@ BuildRequires:  meson
 BuildRequires:  pkgconfig(geckocamera)
 BuildRequires:  pkgconfig(droidmedia)
 Requires:       gecko-camera
-Suggests:       droidmedia
+Requires:       droidmedia
 
 %description
 A library to simplify video capture, droidmedia-based plugin.

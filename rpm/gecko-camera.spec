@@ -6,6 +6,7 @@ License:        LGPLv2+
 URL:            https://github.com/sailfishos/gecko-camera
 Source0:        %{name}-%{version}.tar.gz
 BuildRequires:  meson
+Recommends:     gecko-camera-droid-plugin
 
 %description
 %{summary}.
