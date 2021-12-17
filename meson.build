@@ -25,6 +25,7 @@ add_project_link_arguments(['-lstdc++fs'], language : 'cpp')
 if get_option('build-devel') == true or get_option('build-tests') == true
   geckocamera_source = [
     'geckocamera.cpp',
+    'geckocamera-codec.cpp',
     'utils.cpp'
   ]
 
@@ -43,6 +44,7 @@ if get_option('build-devel') == true or get_option('build-tests') == true
   geckocamera_headers = [
     'geckocamera.h',
     'geckocamera-utils.h',
+    'geckocamera-codec.h'
   ]
 
   install_headers(geckocamera_headers, subdir : meson.project_name())
