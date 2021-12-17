@@ -65,23 +65,23 @@ private:
     mutex managerLock;
 };
 
-class DroidCameraBuffer : public CameraFrame
+class DroidCameraBuffer : public YCbCrFrame
 {
 public:
-    static shared_ptr<CameraFrame> create(
+    static shared_ptr<YCbCrFrame> create(
         shared_ptr<DroidCamera> camera,
         DroidMediaBuffer *buffer,
         DroidMediaBufferYCbCr *ycbcr)
     {
-        return static_pointer_cast<CameraFrame>(
+        return static_pointer_cast<YCbCrFrame>(
                    make_shared<DroidCameraBuffer>(camera, buffer, ycbcr));
     }
 
-    static shared_ptr<CameraFrame> create(
+    static shared_ptr<YCbCrFrame> create(
         shared_ptr<DroidCamera> camera,
         DroidMediaCameraRecordingData *data)
     {
-        return static_pointer_cast<CameraFrame>(
+        return static_pointer_cast<YCbCrFrame>(
                    make_shared<DroidCameraBuffer>(camera, data));
     }
 
@@ -524,7 +524,7 @@ void DroidCamera::error_cb(void *user, int arg)
 void DroidCamera::video_frame_cb(void *user, DroidMediaCameraRecordingData *data)
 {
     DroidCamera *camera = (DroidCamera *)user;
-    shared_ptr<CameraFrame> buffer = DroidCameraBuffer::create(
+    shared_ptr<YCbCrFrame> buffer = DroidCameraBuffer::create(
                                          camera->shared_from_this(),
                                          data);
     if (camera->cameraListener) {
@@ -551,7 +551,7 @@ bool DroidCamera::frame_available_cb(void *user, DroidMediaBuffer *droidBuffer)
             && droid_media_buffer_lock_ycbcr(droidBuffer,
                                              DROID_MEDIA_BUFFER_LOCK_READ,
                                              &ycbcr)) {
-        shared_ptr<CameraFrame> buffer = DroidCameraBuffer::create(
+        shared_ptr<YCbCrFrame> buffer = DroidCameraBuffer::create(
                                              camera->shared_from_this(),
                                              droidBuffer,
                                              &ycbcr);
@@ -588,21 +588,22 @@ DroidCameraBuffer::DroidCameraBuffer(
     , buffer(buffer)
     , recordingData(nullptr)
 {
-    y = ycbcr->y;
-    cb = ycbcr->cb;
-    cr = ycbcr->cr;
+    y = static_cast<const uint8_t*>(ycbcr->y);
+    cb = static_cast<const uint8_t*>(ycbcr->cb);
+    cr = static_cast<const uint8_t*>(ycbcr->cr);
     yStride = ycbcr->ystride;
+    width = camera->currentParameters->currentCapability.width;
     height = camera->currentParameters->currentCapability.height;
     cStride = ycbcr->cstride;
     chromaStep = ycbcr->chroma_step;
-    timestampMs = droid_media_buffer_get_timestamp(buffer);
+    timestampUs = droid_media_buffer_get_timestamp(buffer);
 
     LOGV("created " << this
-         << " y=" << y
+         << " y=" << (const void *)y
          << " yStride=" << yStride
          << " cStride=" << cStride
          << " chromaStep=" << chromaStep
-         << " timestampMs=" << timestampMs);
+         << " timestampUs=" << timestampUs);
 }
 
 DroidCameraBuffer::DroidCameraBuffer(
@@ -613,21 +614,22 @@ DroidCameraBuffer::DroidCameraBuffer(
     , recordingData(data)
 {
     DroidMediaBufferYCbCr tmpl = camera->currentParameters->ycrcbTemplate;
-    y = droid_media_camera_recording_frame_get_data(data);
-    cb = (char *)y + (off_t)tmpl.cb;
-    cr = (char *)y + (off_t)tmpl.cr;
+    y = static_cast<const uint8_t*>(droid_media_camera_recording_frame_get_data(data));
+    cb = static_cast<const uint8_t*>(y) + (off_t)tmpl.cb;
+    cr = static_cast<const uint8_t*>(y) + (off_t)tmpl.cr;
     yStride = tmpl.ystride;
+    width = camera->currentParameters->currentCapability.width;
     height = camera->currentParameters->currentCapability.height;
     cStride = tmpl.cstride;
     chromaStep = tmpl.chroma_step;
-    timestampMs = droid_media_camera_recording_frame_get_timestamp(data);
+    timestampUs = droid_media_camera_recording_frame_get_timestamp(data);
 
     LOGV("created " << this
-         << " y=" << y
+         << " y=" << (const void *)y
          << " yStride=" << yStride
          << " cStride=" << cStride
          << " chromaStep=" << chromaStep
-         << " timestampMs=" << timestampMs);
+         << " timestampUs=" << timestampUs);
 }
 
 DroidCameraBuffer::~DroidCameraBuffer()

@@ -82,7 +82,7 @@ public:
     }
 
 private:
-    void onCameraFrame(shared_ptr<const CameraFrame> frame)
+    void onCameraFrame(shared_ptr<const YCbCrFrame> frame)
     {
         cout << "buffer at " << frame->y << "\n";
     }
