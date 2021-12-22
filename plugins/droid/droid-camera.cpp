@@ -596,7 +596,7 @@ DroidCameraBuffer::DroidCameraBuffer(
     height = camera->currentParameters->currentCapability.height;
     cStride = ycbcr->cstride;
     chromaStep = ycbcr->chroma_step;
-    timestampUs = droid_media_buffer_get_timestamp(buffer);
+    timestampUs = droid_media_buffer_get_timestamp(buffer) / 1000;
 
     LOGV("created " << this
          << " y=" << (const void *)y
@@ -622,7 +622,7 @@ DroidCameraBuffer::DroidCameraBuffer(
     height = camera->currentParameters->currentCapability.height;
     cStride = tmpl.cstride;
     chromaStep = tmpl.chroma_step;
-    timestampUs = droid_media_camera_recording_frame_get_timestamp(data);
+    timestampUs = droid_media_camera_recording_frame_get_timestamp(data) / 1000;
 
     LOGV("created " << this
          << " y=" << (const void *)y
