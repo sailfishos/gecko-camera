@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Open Mobile Platform LLC.
+ * Copyright (C) 2021-2022 Open Mobile Platform LLC.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -84,7 +84,8 @@ class VideoDecoderListener
 {
 public:
     virtual ~VideoDecoderListener() = default;
-    virtual void onDecodedFrame(gecko::camera::YCbCrFrame frame) = 0;
+    virtual void onDecodedYCbCrFrame(const gecko::camera::YCbCrFrame *frame) = 0;
+    virtual void onDecodedGraphicBuffer(std::shared_ptr<gecko::camera::GraphicBuffer> buffer) = 0;
     virtual void onDecoderError(std::string errorDescription) = 0;
     virtual void onDecoderEOS() = 0;
 };

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Open Mobile Platform LLC.
+ * Copyright (C) 2021-2022 Open Mobile Platform LLC.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -47,6 +47,10 @@ struct CameraInfo {
     unsigned int mountAngle;
 };
 
+enum ImageFormat {
+    YCbCr,
+};
+
 struct YCbCrFrame {
     const uint8_t *y;
     const uint8_t *cb;
@@ -59,11 +63,36 @@ struct YCbCrFrame {
     uint64_t timestampUs;
 };
 
+struct RawImageFrame {
+    const uint8_t *data;
+    size_t size;
+    ImageFormat imageFormat;
+    uint16_t width;
+    uint16_t height;
+    uint64_t timestampUs;
+};
+
+class GraphicBuffer {
+public:
+    virtual ~GraphicBuffer() = default;
+
+    uint16_t width;
+    uint16_t height;
+    uint64_t timestampUs;
+    ImageFormat imageFormat = ImageFormat::YCbCr;
+
+    // A hardware-specific handle for the underlying media buffer.
+    const void *handle;
+
+    virtual std::shared_ptr<const YCbCrFrame> mapYCbCr() = 0;
+    virtual std::shared_ptr<const RawImageFrame> map() = 0;
+};
+
 class CameraListener
 {
 public:
     virtual ~CameraListener() = default;
-    virtual void onCameraFrame(std::shared_ptr<const YCbCrFrame> frame) = 0;
+    virtual void onCameraFrame(std::shared_ptr<GraphicBuffer> buffer) = 0;
     virtual void onCameraError(std::string errorDescription) = 0;
 };
 

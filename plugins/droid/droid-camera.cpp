@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Open Mobile Platform LLC.
+ * Copyright (C) 2021-2022 Open Mobile Platform LLC.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,7 @@
 #include <droidmediacamera.h>
 
 #include "geckocamera.h"
+#include "droid-common.h"
 
 #define LOG_TOPIC "droid-camera"
 #include "geckocamera-utils.h"
@@ -35,6 +36,7 @@ using namespace gecko::camera;
 
 class DroidCamera;
 class DroidCameraParams;
+class DroidCameraGraphicBuffer;
 
 struct DroidCameraItem {
     CameraInfo info;
@@ -65,40 +67,32 @@ private:
     mutex managerLock;
 };
 
-class DroidCameraBuffer : public YCbCrFrame
+class DroidCameraYCbCrFrame : public YCbCrFrame
 {
 public:
-    static shared_ptr<YCbCrFrame> create(
-        shared_ptr<DroidCamera> camera,
-        DroidMediaBuffer *buffer,
-        DroidMediaBufferYCbCr *ycbcr)
-    {
-        return static_pointer_cast<YCbCrFrame>(
-                   make_shared<DroidCameraBuffer>(camera, buffer, ycbcr));
-    }
+    explicit DroidCameraYCbCrFrame();
+    bool map(DroidCameraGraphicBuffer *buffer, const DroidMediaBufferYCbCr &tmpl, const uint8_t *addr);
+private:
+    shared_ptr<DroidCameraGraphicBuffer> buffer;
+};
 
-    static shared_ptr<YCbCrFrame> create(
-        shared_ptr<DroidCamera> camera,
-        DroidMediaCameraRecordingData *data)
-    {
-        return static_pointer_cast<YCbCrFrame>(
-                   make_shared<DroidCameraBuffer>(camera, data));
-    }
-
-    explicit DroidCameraBuffer(
-        shared_ptr<DroidCamera> camera,
-        DroidMediaBuffer *buffer,
-        DroidMediaBufferYCbCr *ycbcr);
-
-    explicit DroidCameraBuffer(
-        shared_ptr<DroidCamera> camera,
+class DroidCameraGraphicBuffer
+    : public GraphicBuffer
+    , public enable_shared_from_this<DroidCameraGraphicBuffer>
+{
+public:
+    explicit DroidCameraGraphicBuffer(
+        DroidCamera *camera,
         DroidMediaCameraRecordingData *data);
 
-    ~DroidCameraBuffer();
+    virtual shared_ptr<const YCbCrFrame> mapYCbCr() override;
+    virtual shared_ptr<const RawImageFrame> map() override;
+
+    ~DroidCameraGraphicBuffer();
+    friend class DroidCameraYCbCrFrame;
 
 private:
     shared_ptr<DroidCamera> camera;
-    DroidMediaBuffer *buffer;
     DroidMediaCameraRecordingData *recordingData;
 };
 
@@ -129,6 +123,7 @@ private:
     DroidCameraManager *manager;
     DroidMediaCamera *handle;
     mutex cameraLock;
+    DroidGraphicBufferPool m_bufferPool;
 
     bool started;
     bool exclusiveAccess;
@@ -151,7 +146,7 @@ private:
     static bool preview_buffer_created_cb(void *user, DroidMediaBuffer *);
     static bool preview_frame_available_cb(void *user, DroidMediaBuffer *);
 
-    friend class DroidCameraBuffer;
+    friend class DroidCameraGraphicBuffer;
 };
 
 std::ostream &operator<<(std::ostream &os, DroidCamera *camera)
@@ -177,7 +172,7 @@ public:
     bool setCapability(CameraCapability cap);
     string toString();
     CameraCapability currentCapability;
-    DroidMediaBufferYCbCr ycrcbTemplate;
+    DroidMediaBufferYCbCr ycbcrTemplate;
 
 private:
     map<string, string> params;
@@ -292,7 +287,7 @@ bool DroidCameraManager::getCaptureAccess(shared_ptr<DroidCamera> camera, bool e
         }
     }
 
-    int num = camera->getNumber();
+    size_t num = camera->getNumber();
     if (num >= 0 && num < cameraList.size()) {
         DroidCameraItem &entry = cameraList.at(num);
         shared_ptr<DroidCamera> runningCamera = entry.runningInstance.lock();
@@ -524,9 +519,8 @@ void DroidCamera::error_cb(void *user, int arg)
 void DroidCamera::video_frame_cb(void *user, DroidMediaCameraRecordingData *data)
 {
     DroidCamera *camera = (DroidCamera *)user;
-    shared_ptr<YCbCrFrame> buffer = DroidCameraBuffer::create(
-                                         camera->shared_from_this(),
-                                         data);
+    // Always create the buffer even if the listener is not set
+    shared_ptr<DroidCameraGraphicBuffer> buffer = make_shared<DroidCameraGraphicBuffer>(camera, data);
     if (camera->cameraListener) {
         camera->cameraListener->onCameraFrame(buffer);
     }
@@ -534,30 +528,26 @@ void DroidCamera::video_frame_cb(void *user, DroidMediaCameraRecordingData *data
 
 void DroidCamera::buffers_released_cb(void *user)
 {
+    DroidCamera *camera = (DroidCamera *)user;
+    camera->m_bufferPool.clear();
 }
 
 bool DroidCamera::buffer_created_cb(void *user, DroidMediaBuffer *buffer)
 {
-    // Nothing to do yet
-    return true;
+    DroidCamera *camera = (DroidCamera *)user;
+    return camera->m_bufferPool.bind(nullptr, buffer);
 }
 
 bool DroidCamera::frame_available_cb(void *user, DroidMediaBuffer *droidBuffer)
 {
     DroidCamera *camera = (DroidCamera *)user;
-    DroidMediaBufferYCbCr ycbcr;
 
-    if (droidBuffer && camera->cameraListener
-            && droid_media_buffer_lock_ycbcr(droidBuffer,
-                                             DROID_MEDIA_BUFFER_LOCK_READ,
-                                             &ycbcr)) {
-        shared_ptr<YCbCrFrame> buffer = DroidCameraBuffer::create(
-                                             camera->shared_from_this(),
-                                             droidBuffer,
-                                             &ycbcr);
+    if (droidBuffer && camera->cameraListener) {
+        shared_ptr<GraphicBuffer> buffer = camera->m_bufferPool.acquire(droidBuffer);
         camera->cameraListener->onCameraFrame(buffer);
         return true;
     }
+    // Tell droidmedia to release the buffer.
     return false;
 }
 
@@ -580,49 +570,29 @@ bool DroidCamera::preview_frame_available_cb(void *user, DroidMediaBuffer *droid
     return true;
 }
 
-DroidCameraBuffer::DroidCameraBuffer(
-    shared_ptr<DroidCamera> camera,
-    DroidMediaBuffer *buffer,
-    DroidMediaBufferYCbCr *ycbcr)
-    : camera(camera)
-    , buffer(buffer)
-    , recordingData(nullptr)
-{
-    y = static_cast<const uint8_t*>(ycbcr->y);
-    cb = static_cast<const uint8_t*>(ycbcr->cb);
-    cr = static_cast<const uint8_t*>(ycbcr->cr);
-    yStride = ycbcr->ystride;
-    width = camera->currentParameters->currentCapability.width;
-    height = camera->currentParameters->currentCapability.height;
-    cStride = ycbcr->cstride;
-    chromaStep = ycbcr->chroma_step;
-    timestampUs = droid_media_buffer_get_timestamp(buffer) / 1000;
-
-    LOGV("created " << this
-         << " y=" << (const void *)y
-         << " yStride=" << yStride
-         << " cStride=" << cStride
-         << " chromaStep=" << chromaStep
-         << " timestampUs=" << timestampUs);
-}
-
-DroidCameraBuffer::DroidCameraBuffer(
-    shared_ptr<DroidCamera> camera,
+DroidCameraGraphicBuffer::DroidCameraGraphicBuffer(
+    DroidCamera* camera,
     DroidMediaCameraRecordingData *data)
-    : camera(camera)
-    , buffer(nullptr)
+    : camera(camera->shared_from_this())
     , recordingData(data)
 {
-    DroidMediaBufferYCbCr tmpl = camera->currentParameters->ycrcbTemplate;
-    y = static_cast<const uint8_t*>(droid_media_camera_recording_frame_get_data(data));
-    cb = static_cast<const uint8_t*>(y) + (off_t)tmpl.cb;
-    cr = static_cast<const uint8_t*>(y) + (off_t)tmpl.cr;
-    yStride = tmpl.ystride;
     width = camera->currentParameters->currentCapability.width;
     height = camera->currentParameters->currentCapability.height;
+    timestampUs = droid_media_camera_recording_frame_get_timestamp(data) / 1000;
+}
+
+bool DroidCameraYCbCrFrame::map(DroidCameraGraphicBuffer *buffer, const DroidMediaBufferYCbCr &tmpl, const uint8_t *addr)
+{
+    this->buffer = buffer->shared_from_this();
+    y = addr;
+    cb = addr + (off_t)tmpl.cb;
+    cr = addr + (off_t)tmpl.cr;
+    yStride = tmpl.ystride;
     cStride = tmpl.cstride;
     chromaStep = tmpl.chroma_step;
-    timestampUs = droid_media_camera_recording_frame_get_timestamp(data) / 1000;
+    width = buffer->width;
+    height = buffer->height;
+    timestampUs = buffer->timestampUs;
 
     LOGV("created " << this
          << " y=" << (const void *)y
@@ -630,18 +600,35 @@ DroidCameraBuffer::DroidCameraBuffer(
          << " cStride=" << cStride
          << " chromaStep=" << chromaStep
          << " timestampUs=" << timestampUs);
+
+    return true;
 }
 
-DroidCameraBuffer::~DroidCameraBuffer()
+DroidCameraYCbCrFrame::DroidCameraYCbCrFrame()
+    : buffer(nullptr)
+{
+}
+
+shared_ptr<const YCbCrFrame> DroidCameraGraphicBuffer::mapYCbCr()
+{
+    shared_ptr<DroidCameraYCbCrFrame> ptr = make_shared<DroidCameraYCbCrFrame>();
+    bool success = false;
+
+    success = ptr->map(this, camera->currentParameters->ycbcrTemplate,
+        static_cast<const uint8_t *>(droid_media_camera_recording_frame_get_data(recordingData)));
+
+    return success ? static_pointer_cast<YCbCrFrame>(ptr) : nullptr;
+}
+
+shared_ptr<const RawImageFrame> DroidCameraGraphicBuffer::map()
+{
+    return nullptr;
+}
+
+DroidCameraGraphicBuffer::~DroidCameraGraphicBuffer()
 {
     LOGV(this << " release");
-
-    if (buffer) {
-        droid_media_buffer_unlock(buffer);
-        droid_media_buffer_release(buffer, NULL, 0);
-    } else {
-        droid_media_camera_release_recording_frame(camera->handle, recordingData);
-    }
+    droid_media_camera_release_recording_frame(camera->handle, recordingData);
 }
 
 DroidCameraParams::DroidCameraParams(string inp)
@@ -719,20 +706,20 @@ bool DroidCameraParams::setCapability(CameraCapability cap)
         // Inoi R7 produces QOMX_COLOR_FormatYUV420PackedSemiPlanar32m
         unsigned int stride_w = _ALIGN_SIZE(cap.width, 128);
         unsigned int stride_h = _ALIGN_SIZE(cap.height, 32);
-        ycrcbTemplate.cb = (void *)(stride_w * stride_h);
-        ycrcbTemplate.cr = (void *)(stride_w * stride_h + 1);
-        ycrcbTemplate.ystride = stride_w;
-        ycrcbTemplate.cstride = stride_w;
-        ycrcbTemplate.chroma_step = 2;
+        ycbcrTemplate.cb = (void *)(stride_w * stride_h);
+        ycbcrTemplate.cr = (void *)(stride_w * stride_h + 1);
+        ycbcrTemplate.ystride = stride_w;
+        ycbcrTemplate.cstride = stride_w;
+        ycbcrTemplate.chroma_step = 2;
     } else {
         // Default is I420
-        ycrcbTemplate.cr = (void *)(cap.width * cap.height);
-        ycrcbTemplate.cb = (char *)ycrcbTemplate.cr + (cap.width * cap.height) / 4;
-        ycrcbTemplate.ystride = cap.width;
-        ycrcbTemplate.cstride = cap.width / 2;
-        ycrcbTemplate.chroma_step = 1;
+        ycbcrTemplate.cr = (void *)(cap.width * cap.height);
+        ycbcrTemplate.cb = (char *)ycbcrTemplate.cr + (cap.width * cap.height) / 4;
+        ycbcrTemplate.ystride = cap.width;
+        ycbcrTemplate.cstride = cap.width / 2;
+        ycbcrTemplate.chroma_step = 1;
     }
-    ycrcbTemplate.y = 0;
+    ycbcrTemplate.y = 0;
 
 #undef _ALIGN_SIZE
 

@@ -61,18 +61,41 @@ public:
 class DummyCameraFrame : public YCbCrFrame
 {
 public:
-    static shared_ptr<YCbCrFrame> create(
-        shared_ptr<DummyCamera> camera, unsigned int phase)
+    explicit DummyCameraFrame(shared_ptr<DummyCamera> camera,
+                              unsigned int phase, uint64_t timestampUs);
+    ~DummyCameraFrame()
     {
-        return static_pointer_cast<YCbCrFrame>(
-                   make_shared<DummyCameraFrame>(camera, phase));
     }
-
-    explicit DummyCameraFrame(shared_ptr<DummyCamera> camera, unsigned int phase);
-    ~DummyCameraFrame() {}
 
 private:
     shared_ptr<DummyCamera> m_camera;
+};
+
+class DummyCameraGraphicBuffer : public GraphicBuffer
+{
+public:
+    explicit DummyCameraGraphicBuffer(shared_ptr<DummyCamera> camera, unsigned int phase);
+    ~DummyCameraGraphicBuffer()
+    {
+    }
+
+    virtual std::shared_ptr<const YCbCrFrame> mapYCbCr() override
+    {
+        if (!m_frame) {
+            m_frame = make_shared<DummyCameraFrame>(m_camera, m_phase, timestampUs);
+        }
+        return m_frame;
+    }
+
+    virtual std::shared_ptr<const RawImageFrame> map() override
+    {
+        return nullptr;
+    }
+
+private:
+    shared_ptr<DummyCamera> m_camera;
+    unsigned int m_phase;
+    shared_ptr<YCbCrFrame> m_frame;
 };
 
 class DummyCamera : public Camera, public enable_shared_from_this<DummyCamera>
@@ -145,6 +168,7 @@ public:
         return true;
     }
 
+    friend class DummyCameraGraphicBuffer;
     friend class DummyCameraFrame;
 
 private:
@@ -155,7 +179,7 @@ private:
     {
         unsigned int phase = 0;
         while (m_started) {
-            auto frame = DummyCameraFrame::create(shared_from_this(), phase++);
+            auto frame = make_shared<DummyCameraGraphicBuffer>(shared_from_this(), phase++);
             if (cameraListener) {
                 cameraListener->onCameraFrame(frame);
             }
@@ -197,20 +221,34 @@ bool DummyCameraManager::openCamera(string cameraId, shared_ptr<Camera> &camera)
     return false;
 }
 
-DummyCameraFrame::DummyCameraFrame(shared_ptr<DummyCamera> camera, unsigned int phase)
+DummyCameraGraphicBuffer::DummyCameraGraphicBuffer(
+        shared_ptr<DummyCamera> camera, unsigned int phase)
+    : m_camera(camera)
+    , m_phase(phase)
+    , m_frame(nullptr)
+{
+    width = camera->m_width;
+    height = camera->m_height;
+    handle = nullptr;
+    timestampUs = chrono::duration_cast<std::chrono::microseconds>(
+            chrono::high_resolution_clock::now().time_since_epoch()).count();
+}
+
+DummyCameraFrame::DummyCameraFrame(
+        shared_ptr<DummyCamera> camera, unsigned int phase, uint64_t timestamp)
     : m_camera(camera)
 {
     phase %= camera->m_maxOffset;
 
     yStride = camera->m_width;
     cStride = (camera->m_width + 1) / 2;
+    width = camera->m_width;
     height = camera->m_height;
     chromaStep = 1;
     y = camera->m_frameData + phase;
     cb = camera->m_frameData + phase;
     cr = camera->m_frameData + phase;
-    timestampUs = chrono::duration_cast<std::chrono::microseconds>(
-            chrono::high_resolution_clock::now().time_since_epoch()).count();
+    timestampUs = timestamp;
 }
 
 static DummyCameraManager dummyCameraManager;
