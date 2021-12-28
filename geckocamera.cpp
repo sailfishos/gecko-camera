@@ -17,11 +17,12 @@
  */
 
 #include <dlfcn.h>
+#include <vector>
+#include <cstring>
 #include <map>
-#include <set>
-#include <filesystem>
 
 #include "geckocamera.h"
+#include "geckocamera-plugins.h"
 #include "geckocamera-utils.h"
 
 namespace gecko {
@@ -49,30 +50,18 @@ private:
     map<const string, shared_ptr<CameraManager>> cameraIdMap;
     map<const string, shared_ptr<CameraManager>> plugins;
 
-    shared_ptr<CameraManager> loadPlugin(string path);
+    shared_ptr<CameraManager> loadPlugin(Plugin &plugin);
 };
 
 bool RootCameraManager::init()
 {
     if (!initialized) {
-        LogInit("gecko-camera", getenv("GECKO_CAMERA_DEBUG") ? LogDebug : LogInfo);
-        filesystem::directory_entry pluginDir(GECKO_CAMERA_PLUGIN_DIR);
-        if (pluginDir.exists() && pluginDir.is_directory()) {
-            for (const auto &entry : filesystem::directory_iterator(GECKO_CAMERA_PLUGIN_DIR)) {
-                if (entry.is_regular_file()) {
-                    string path = entry.path();
-                    auto found = plugins.find(path);
-                    if (found == plugins.end()) {
-                        auto plugin = loadPlugin(path);
-                        if (plugin && plugin->init()) {
-                            LOGI("Initialized plugin at " << path);
-                            plugins.emplace(path, plugin);
-                        }
-                    }
-                }
+        for (auto plugin : PluginManager::get()->listPlugins()) {
+            auto manager = loadPlugin(plugin);
+            if (manager && manager->init()) {
+                plugins.emplace(plugin.path, manager);
             }
         }
-        initialized = true;
     }
     return true;
 }
@@ -130,14 +119,10 @@ void RootCameraManager::findCameras()
     }
 }
 
-shared_ptr<CameraManager> RootCameraManager::loadPlugin(string path)
+shared_ptr<CameraManager> RootCameraManager::loadPlugin(Plugin &plugin)
 {
-    // Clear error
-    dlerror();
-
-    void *handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
-    if (handle) {
-        CameraManager* (*_manager)() = (CameraManager * (*)())dlsym(handle, "gecko_camera_plugin_manager");
+    if (plugin.handle) {
+        CameraManager* (*_manager)() = (CameraManager * (*)())dlsym(plugin.handle, "gecko_camera_plugin_manager");
         if (_manager) {
             CameraManager *manager = _manager();
             if (manager) {
@@ -146,7 +131,6 @@ shared_ptr<CameraManager> RootCameraManager::loadPlugin(string path)
                 return shared_ptr<CameraManager>(shared_ptr<CameraManager> {}, manager);
             }
         }
-        dlclose(handle);
     }
     return nullptr;
 }

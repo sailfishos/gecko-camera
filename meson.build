@@ -26,6 +26,7 @@ if get_option('build-devel') == true or get_option('build-tests') == true
   geckocamera_source = [
     'geckocamera.cpp',
     'geckocamera-codec.cpp',
+    'geckocamera-plugins.cpp',
     'utils.cpp'
   ]
 

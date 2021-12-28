@@ -24,6 +24,7 @@
 #include "geckocamera-codec.h"
 
 #define LOG_TOPIC "codec"
+#include "geckocamera-plugins.h"
 #include "geckocamera-utils.h"
 
 namespace gecko {
@@ -47,7 +48,7 @@ public:
     bool createVideoDecoder(CodecType codecType, shared_ptr<VideoDecoder> &decoder);
 
 private:
-    shared_ptr<CodecManager> loadPlugin(string path);
+    shared_ptr<CodecManager> loadPlugin(Plugin &plugin);
 
     mutex m_mutex;
     bool m_initialized = false;
@@ -59,20 +60,11 @@ bool RootCodecManager::init()
 {
     scoped_lock lock(m_mutex);
     if (!m_initialized) {
-        filesystem::directory_entry pluginDir(GECKO_CAMERA_PLUGIN_DIR);
-        if (pluginDir.exists() && pluginDir.is_directory()) {
-            for (const auto &entry : filesystem::directory_iterator(GECKO_CAMERA_PLUGIN_DIR)) {
-                if (entry.is_regular_file()) {
-                    string path = entry.path();
-                    auto found = m_plugins.find(path);
-                    if (found == m_plugins.end()) {
-                        auto plugin = loadPlugin(path);
-                        if (plugin && plugin->init()) {
-                            LOGI("Initialized codec plugin at " << path);
-                            m_plugins.emplace(path, plugin);
-                        }
-                    }
-                }
+        for (auto plugin : PluginManager::get()->listPlugins()) {
+            auto manager = loadPlugin(plugin);
+            if (manager && manager->init()) {
+                LOGI("Initialized codec plugin at " << plugin.path);
+                m_plugins.emplace(plugin.path, manager);
             }
         }
         m_initialized = true;
@@ -80,16 +72,10 @@ bool RootCodecManager::init()
     return true;
 }
 
-shared_ptr<CodecManager> RootCodecManager::loadPlugin(string path)
+shared_ptr<CodecManager> RootCodecManager::loadPlugin(Plugin &plugin)
 {
-    LOGD("Trying plugin at " << path);
-
-    // Clear error
-    dlerror();
-
-    void *handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
-    if (handle) {
-        CodecManager* (*_manager)() = (CodecManager * (*)())dlsym(handle, "gecko_codec_plugin_manager");
+    if (plugin.handle) {
+        CodecManager* (*_manager)() = (CodecManager * (*)())dlsym(plugin.handle, "gecko_codec_plugin_manager");
         if (_manager) {
             CodecManager *manager = _manager();
             if (manager) {
@@ -98,7 +84,6 @@ shared_ptr<CodecManager> RootCodecManager::loadPlugin(string path)
                 return shared_ptr<CodecManager>(shared_ptr<CodecManager> {}, manager);
             }
         }
-        dlclose(handle);
     }
     return nullptr;
 }
