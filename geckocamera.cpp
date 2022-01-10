@@ -43,25 +43,27 @@ public:
     bool openCamera(const string cameraId, shared_ptr<Camera> &camera);
 
 private:
-    bool initialized = false;
     void findCameras();
-
-    vector<CameraInfo> cameraInfoList;
-    map<const string, shared_ptr<CameraManager>> cameraIdMap;
-    map<const string, shared_ptr<CameraManager>> plugins;
-
     shared_ptr<CameraManager> loadPlugin(Plugin &plugin);
+
+    mutex m_mutex;
+    bool m_initialized = false;
+    vector<CameraInfo> m_cameraInfoList;
+    map<const string, shared_ptr<CameraManager>> m_cameraIdMap;
+    map<const string, shared_ptr<CameraManager>> m_plugins;
 };
 
 bool RootCameraManager::init()
 {
-    if (!initialized) {
+    scoped_lock lock(m_mutex);
+    if (!m_initialized) {
         for (auto plugin : PluginManager::get()->listPlugins()) {
             auto manager = loadPlugin(plugin);
             if (manager && manager->init()) {
-                plugins.emplace(plugin.path, manager);
+                m_plugins.emplace(plugin.path, manager);
             }
         }
+        m_initialized = true;
     }
     return true;
 }
@@ -70,13 +72,13 @@ int RootCameraManager::getNumberOfCameras()
 {
     init();
     findCameras();
-    return cameraInfoList.size();
+    return m_cameraInfoList.size();
 }
 
 bool RootCameraManager::getCameraInfo(unsigned int num, CameraInfo &info)
 {
-    if (num < cameraInfoList.size()) {
-        info = cameraInfoList.at(num);
+    if (num < m_cameraInfoList.size()) {
+        info = m_cameraInfoList.at(num);
         return true;
     }
     return false;
@@ -86,8 +88,8 @@ bool RootCameraManager::queryCapabilities(
     const string cameraId,
     vector<CameraCapability> &caps)
 {
-    auto iter = cameraIdMap.find(cameraId);
-    if (iter != cameraIdMap.end()) {
+    auto iter = m_cameraIdMap.find(cameraId);
+    if (iter != m_cameraIdMap.end()) {
         auto plugin = iter->second;
         return plugin->queryCapabilities(cameraId, caps);
     }
@@ -96,8 +98,8 @@ bool RootCameraManager::queryCapabilities(
 
 bool RootCameraManager::openCamera(const string cameraId, shared_ptr<Camera> &camera)
 {
-    auto iter = cameraIdMap.find(cameraId);
-    if (iter != cameraIdMap.end()) {
+    auto iter = m_cameraIdMap.find(cameraId);
+    if (iter != m_cameraIdMap.end()) {
         auto plugin = iter->second;
         return plugin->openCamera(cameraId, camera);
     }
@@ -106,14 +108,15 @@ bool RootCameraManager::openCamera(const string cameraId, shared_ptr<Camera> &ca
 
 void RootCameraManager::findCameras()
 {
-    cameraInfoList.clear();
-    cameraIdMap.clear();
-    for (auto const& [path, plugin] : plugins) {
+    scoped_lock lock(m_mutex);
+    m_cameraInfoList.clear();
+    m_cameraIdMap.clear();
+    for (auto const& [path, plugin] : m_plugins) {
         for (int i = 0; i < plugin->getNumberOfCameras(); i++) {
             CameraInfo info;
             if (plugin->getCameraInfo(i, info)) {
-                cameraInfoList.push_back(info);
-                cameraIdMap.insert_or_assign(info.id, plugin);
+                m_cameraInfoList.push_back(info);
+                m_cameraIdMap.insert_or_assign(info.id, plugin);
             }
         }
     }
