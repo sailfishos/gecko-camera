@@ -47,22 +47,23 @@ struct CameraInfo {
     unsigned int mountAngle;
 };
 
-struct CameraFrame {
-    const void *y;
-    const void *cb;
-    const void *cr;
-    size_t yStride;
-    size_t cStride;
-    size_t chromaStep;
-    uint64_t timestampMs;
-    size_t height;
+struct YCbCrFrame {
+    const uint8_t *y;
+    const uint8_t *cb;
+    const uint8_t *cr;
+    uint16_t yStride;
+    uint16_t cStride;
+    uint16_t chromaStep;
+    uint16_t width;
+    uint16_t height;
+    uint64_t timestampUs;
 };
 
 class CameraListener
 {
 public:
     virtual ~CameraListener() = default;
-    virtual void onCameraFrame(std::shared_ptr<const CameraFrame> frame) = 0;
+    virtual void onCameraFrame(std::shared_ptr<const YCbCrFrame> frame) = 0;
     virtual void onCameraError(std::string errorDescription) = 0;
 };
 

@@ -25,6 +25,8 @@ add_project_link_arguments(['-lstdc++fs'], language : 'cpp')
 if get_option('build-devel') == true or get_option('build-tests') == true
   geckocamera_source = [
     'geckocamera.cpp',
+    'geckocamera-codec.cpp',
+    'geckocamera-plugins.cpp',
     'utils.cpp'
   ]
 
@@ -37,12 +39,14 @@ if get_option('build-devel') == true or get_option('build-tests') == true
       'geckocamera',
       geckocamera_source,
       install: true,
-      dependencies: cc.find_library('dl', required : false),
+      dependencies: [ cc.find_library('dl', required : false),
+                      dependency('threads') ],
       version: libgeckocamera_so_version )
 
   geckocamera_headers = [
     'geckocamera.h',
     'geckocamera-utils.h',
+    'geckocamera-codec.h'
   ]
 
   install_headers(geckocamera_headers, subdir : meson.project_name())
@@ -57,6 +61,10 @@ if get_option('build-examples') == true
   subdir('examples')
 endif
 
-if get_option('build-plugins')
-  subdir('plugins')
+if get_option('build-droid-plugin')
+  subdir('plugins/droid')
+endif
+
+if get_option('build-dummy-plugin')
+  subdir('plugins/dummy')
 endif

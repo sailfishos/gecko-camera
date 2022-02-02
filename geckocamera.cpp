@@ -17,11 +17,12 @@
  */
 
 #include <dlfcn.h>
+#include <vector>
+#include <cstring>
 #include <map>
-#include <set>
-#include <filesystem>
 
 #include "geckocamera.h"
+#include "geckocamera-plugins.h"
 #include "geckocamera-utils.h"
 
 namespace gecko {
@@ -42,37 +43,27 @@ public:
     bool openCamera(const string cameraId, shared_ptr<Camera> &camera);
 
 private:
-    bool initialized = false;
     void findCameras();
+    shared_ptr<CameraManager> loadPlugin(Plugin &plugin);
 
-    vector<CameraInfo> cameraInfoList;
-    map<const string, shared_ptr<CameraManager>> cameraIdMap;
-    map<const string, shared_ptr<CameraManager>> plugins;
-
-    shared_ptr<CameraManager> loadPlugin(string path);
+    mutex m_mutex;
+    bool m_initialized = false;
+    vector<CameraInfo> m_cameraInfoList;
+    map<const string, shared_ptr<CameraManager>> m_cameraIdMap;
+    map<const string, shared_ptr<CameraManager>> m_plugins;
 };
 
 bool RootCameraManager::init()
 {
-    if (!initialized) {
-        LogInit("gecko-camera", getenv("GECKO_CAMERA_DEBUG") ? LogDebug : LogInfo);
-        filesystem::directory_entry pluginDir(GECKO_CAMERA_PLUGIN_DIR);
-        if (pluginDir.exists() && pluginDir.is_directory()) {
-            for (const auto &entry : filesystem::directory_iterator(GECKO_CAMERA_PLUGIN_DIR)) {
-                if (entry.is_regular_file()) {
-                    string path = entry.path();
-                    auto found = plugins.find(path);
-                    if (found == plugins.end()) {
-                        auto plugin = loadPlugin(path);
-                        if (plugin && plugin->init()) {
-                            LOGI("Initialized plugin at " << path);
-                            plugins.emplace(path, plugin);
-                        }
-                    }
-                }
+    scoped_lock lock(m_mutex);
+    if (!m_initialized) {
+        for (auto plugin : PluginManager::get()->listPlugins()) {
+            auto manager = loadPlugin(plugin);
+            if (manager && manager->init()) {
+                m_plugins.emplace(plugin.path, manager);
             }
         }
-        initialized = true;
+        m_initialized = true;
     }
     return true;
 }
@@ -81,13 +72,13 @@ int RootCameraManager::getNumberOfCameras()
 {
     init();
     findCameras();
-    return cameraInfoList.size();
+    return m_cameraInfoList.size();
 }
 
 bool RootCameraManager::getCameraInfo(unsigned int num, CameraInfo &info)
 {
-    if (num < cameraInfoList.size()) {
-        info = cameraInfoList.at(num);
+    if (num < m_cameraInfoList.size()) {
+        info = m_cameraInfoList.at(num);
         return true;
     }
     return false;
@@ -97,8 +88,8 @@ bool RootCameraManager::queryCapabilities(
     const string cameraId,
     vector<CameraCapability> &caps)
 {
-    auto iter = cameraIdMap.find(cameraId);
-    if (iter != cameraIdMap.end()) {
+    auto iter = m_cameraIdMap.find(cameraId);
+    if (iter != m_cameraIdMap.end()) {
         auto plugin = iter->second;
         return plugin->queryCapabilities(cameraId, caps);
     }
@@ -107,8 +98,8 @@ bool RootCameraManager::queryCapabilities(
 
 bool RootCameraManager::openCamera(const string cameraId, shared_ptr<Camera> &camera)
 {
-    auto iter = cameraIdMap.find(cameraId);
-    if (iter != cameraIdMap.end()) {
+    auto iter = m_cameraIdMap.find(cameraId);
+    if (iter != m_cameraIdMap.end()) {
         auto plugin = iter->second;
         return plugin->openCamera(cameraId, camera);
     }
@@ -117,27 +108,24 @@ bool RootCameraManager::openCamera(const string cameraId, shared_ptr<Camera> &ca
 
 void RootCameraManager::findCameras()
 {
-    cameraInfoList.clear();
-    cameraIdMap.clear();
-    for (auto const& [path, plugin] : plugins) {
+    scoped_lock lock(m_mutex);
+    m_cameraInfoList.clear();
+    m_cameraIdMap.clear();
+    for (auto const& [path, plugin] : m_plugins) {
         for (int i = 0; i < plugin->getNumberOfCameras(); i++) {
             CameraInfo info;
             if (plugin->getCameraInfo(i, info)) {
-                cameraInfoList.push_back(info);
-                cameraIdMap.insert_or_assign(info.id, plugin);
+                m_cameraInfoList.push_back(info);
+                m_cameraIdMap.insert_or_assign(info.id, plugin);
             }
         }
     }
 }
 
-shared_ptr<CameraManager> RootCameraManager::loadPlugin(string path)
+shared_ptr<CameraManager> RootCameraManager::loadPlugin(Plugin &plugin)
 {
-    // Clear error
-    dlerror();
-
-    void *handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
-    if (handle) {
-        CameraManager* (*_manager)() = (CameraManager * (*)())dlsym(handle, "gecko_camera_plugin_manager");
+    if (plugin.handle) {
+        CameraManager* (*_manager)() = (CameraManager * (*)())dlsym(plugin.handle, "gecko_camera_plugin_manager");
         if (_manager) {
             CameraManager *manager = _manager();
             if (manager) {
@@ -146,7 +134,6 @@ shared_ptr<CameraManager> RootCameraManager::loadPlugin(string path)
                 return shared_ptr<CameraManager>(shared_ptr<CameraManager> {}, manager);
             }
         }
-        dlclose(handle);
     }
     return nullptr;
 }

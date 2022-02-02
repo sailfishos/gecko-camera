@@ -1,14 +1,15 @@
-geckocamera_plugin_source = [
-  'geckocamera_droid_plugin.cpp',
+droid_plugin_source = [
+  'droid-camera.cpp',
+  'droid-codec.cpp',
 ]
 
 droidmedia_dep=dependency('droidmedia', required: false)
 
-geckocamera_droid = shared_module('geckocamera-droid',
-		       geckocamera_plugin_source,
+droid_plugin = shared_module('geckocamera-droid',
+		       droid_plugin_source,
 		       install: true,
 		       dependencies: droidmedia_dep,
                        include_directories: root_dir,
 		       install_dir: plugins_install_dir )
 
-plugins = [geckocamera_droid]
+plugins = [droid_plugin]
