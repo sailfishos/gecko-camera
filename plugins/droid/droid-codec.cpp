@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Open Mobile Platform LLC.
+ * Copyright (C) 2021-2022 Open Mobile Platform LLC.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -27,10 +27,13 @@
 #define LOG_TOPIC "droid-codec"
 #include <geckocamera-utils.h>
 
+#include "droid-common.h"
+
 namespace gecko {
 namespace codec {
 
 using namespace std;
+using namespace gecko::camera;
 
 static const char *codecTypeToDroidMime(CodecType codecType)
 {
@@ -47,10 +50,10 @@ static const char *codecTypeToDroidMime(CodecType codecType)
     return NULL;
 }
 
-class DroidVideoFrameMapper
+class DroidVideoFrameYUVMapper
 {
 public:
-    DroidVideoFrameMapper() : m_ready(false)
+    DroidVideoFrameYUVMapper() : m_ready(false)
     {
     }
 
@@ -92,9 +95,9 @@ public:
         return true;
     }
 
-    gecko::camera::YCbCrFrame mapYcbCr(DroidMediaCodecData *decoded)
+    YCbCrFrame mapYCbCr(DroidMediaCodecData *decoded)
     {
-        gecko::camera::YCbCrFrame frame = m_template;
+        YCbCrFrame frame = m_template;
         uint8_t *data = static_cast<uint8_t *>(decoded->data.data);
         frame.y  = data + (unsigned long)m_template.y;
         frame.cb = data + (unsigned long)m_template.cb;
@@ -107,8 +110,14 @@ public:
     {
         return m_ready;
     }
+
+    void reset()
+    {
+        m_ready = false;
+    }
+
 private:
-    gecko::camera::YCbCrFrame m_template;
+    YCbCrFrame m_template;
     bool m_ready;
 };
 
@@ -124,6 +133,8 @@ public:
 
     bool createVideoEncoder(CodecType codecType, shared_ptr<VideoEncoder> &encoder);
     bool createVideoDecoder(CodecType codecType, shared_ptr<VideoDecoder> &decoder);
+
+    static bool optionNoMediaBuffer();
 };
 
 class DroidVideoEncoder : public VideoEncoder
@@ -137,7 +148,7 @@ public:
     ~DroidVideoEncoder();
 
     bool init(VideoEncoderMetadata metadata);
-    bool encode(shared_ptr<const gecko::camera::YCbCrFrame> frame, bool forceSync);
+    bool encode(shared_ptr<const YCbCrFrame> frame, bool forceSync);
 
     void dataAvailable(DroidMediaCodecData *encoded);
     void error(string errorDescription);
@@ -153,7 +164,7 @@ private:
     DroidMediaColourFormatConstants m_constants;
 };
 
-class DroidVideoDecoder : public VideoDecoder
+class DroidVideoDecoder : public VideoDecoder, public DroidObject
 {
 public:
     static shared_ptr<DroidVideoDecoder> create(CodecType codecType)
@@ -178,6 +189,8 @@ public:
     void configureOutput();
     void error(string errorDescription);
 
+    bool ProcessMediaBuffer(DroidMediaBuffer *buffer);
+
 private:
     bool createCodec();
 
@@ -187,11 +200,17 @@ private:
     static void error_cb(void *data, int err);
     static int size_changed_cb(void *data, int32_t width, int32_t height);
     static void signal_eos_cb(void *data);
+    static bool buffer_created(void *data, DroidMediaBuffer *buffer);
+    static void buffers_released(void *data);
+    static bool frame_available(void *data, DroidMediaBuffer *buffer);
 
     CodecType m_codecType;
     DroidMediaCodecDecoderMetaData m_metadata;
     DroidMediaCodec *m_codec = nullptr;
-    DroidVideoFrameMapper m_mapper;
+    DroidVideoFrameYUVMapper m_mapper;
+    DroidMediaBufferQueue *m_buffer_queue = nullptr;
+    bool m_disable_media_buffers = false;
+    DroidGraphicBufferPool m_bufferPool;
 };
 
 bool DroidCodecManager::init()
@@ -221,8 +240,12 @@ bool DroidCodecManager::videoDecoderAvailable(CodecType codecType)
     DroidMediaCodecMetaData metadata;
 
     memset(&metadata, 0x0, sizeof (metadata));
-    metadata.flags = static_cast<DroidMediaCodecFlags>(DROID_MEDIA_CODEC_HW_ONLY |
-                                                       DROID_MEDIA_CODEC_NO_MEDIA_BUFFER);
+    if (optionNoMediaBuffer()) {
+        metadata.flags = static_cast<DroidMediaCodecFlags>(DROID_MEDIA_CODEC_HW_ONLY |
+                                                           DROID_MEDIA_CODEC_NO_MEDIA_BUFFER);
+    } else {
+        metadata.flags = static_cast<DroidMediaCodecFlags>(DROID_MEDIA_CODEC_HW_ONLY);
+    }
     metadata.type = codecTypeToDroidMime(codecType);
 
     if (metadata.type
@@ -246,6 +269,19 @@ bool DroidCodecManager::createVideoDecoder(CodecType codecType, shared_ptr<Video
     LOGD("");
     decoder = DroidVideoDecoder::create(codecType);
     return true;
+}
+
+// static
+bool DroidCodecManager::optionNoMediaBuffer()
+{
+    const char *envValue = getenv("GECKO_CAMERA_DROID_NO_MEDIA_BUFFER");
+
+    DroidMediaColourFormatConstants c;
+    droid_media_colour_format_constants_init (&c);
+
+    // droidmedia on Android < 5 reports OMX_COLOR_FormatYUV420Flexible as 0
+    return c.OMX_COLOR_FormatYUV420Flexible == 0
+           || (envValue && strcmp(envValue, "0") && strcmp(envValue, ""));
 }
 
 DroidVideoEncoder::DroidVideoEncoder(CodecType codecType)
@@ -369,7 +405,7 @@ bool DroidVideoEncoder::init(VideoEncoderMetadata metadata)
     return true;
 }
 
-bool DroidVideoEncoder::encode(shared_ptr<const gecko::camera::YCbCrFrame> frame, bool forceSync)
+bool DroidVideoEncoder::encode(shared_ptr<const YCbCrFrame> frame, bool forceSync)
 {
     LOGV("Encode: timestamp=" << frame->timestampUs << " forceSync=" << forceSync);
 
@@ -508,9 +544,19 @@ DroidVideoDecoder::~DroidVideoDecoder()
 bool DroidVideoDecoder::init(VideoDecoderMetadata metadata)
 {
     memset (&m_metadata, 0x0, sizeof (m_metadata));
-    m_metadata.parent.flags =
-        static_cast <DroidMediaCodecFlags> (DROID_MEDIA_CODEC_HW_ONLY |
-                                            DROID_MEDIA_CODEC_NO_MEDIA_BUFFER);
+    m_disable_media_buffers = DroidCodecManager::optionNoMediaBuffer();
+
+    if (!m_disable_media_buffers) {
+        DroidMediaColourFormatConstants c;
+        droid_media_colour_format_constants_init (&c);
+        m_metadata.color_format = c.OMX_COLOR_FormatYUV420Flexible;
+        m_metadata.parent.flags =
+            static_cast <DroidMediaCodecFlags> (DROID_MEDIA_CODEC_HW_ONLY);
+    } else {
+        m_metadata.parent.flags =
+            static_cast <DroidMediaCodecFlags> (DROID_MEDIA_CODEC_HW_ONLY |
+                                                DROID_MEDIA_CODEC_NO_MEDIA_BUFFER);
+    }
     m_metadata.parent.type = codecTypeToDroidMime(m_codecType);
     if (!m_metadata.parent.type) {
         LOGE("Unknown codec " << m_codecType);
@@ -568,7 +614,18 @@ bool DroidVideoDecoder::createCodec()
         droid_media_codec_set_callbacks(m_codec, &cb, this);
     }
 
-    {
+    m_buffer_queue = m_disable_media_buffers ? nullptr :
+                            droid_media_codec_get_buffer_queue(m_codec);
+    if (m_buffer_queue) {
+        LOGI("Using media buffers");
+        DroidMediaBufferQueueCallbacks cb;
+        memset(&cb, 0, sizeof(cb));
+        cb.buffers_released = DroidVideoDecoder::buffers_released;
+        cb.buffer_created = DroidVideoDecoder::buffer_created;
+        cb.frame_available = DroidVideoDecoder::frame_available;
+        droid_media_buffer_queue_set_callbacks (m_buffer_queue, &cb, this);
+    } else {
+        LOGI("Not using media buffers");
         DroidMediaCodecDataCallbacks cb;
         memset(&cb, 0, sizeof(cb));
         cb.data_available = DroidVideoDecoder::data_available_cb;
@@ -587,6 +644,39 @@ bool DroidVideoDecoder::createCodec()
     LOGD("Decoder started for " << m_metadata.parent.type);
 
     return true;
+}
+
+bool DroidVideoDecoder::ProcessMediaBuffer(DroidMediaBuffer *droidBuffer)
+{
+    if (droidBuffer && m_decoderListener) {
+        shared_ptr<GraphicBuffer> buffer = m_bufferPool.acquire(droidBuffer);
+        if (buffer) {
+            m_decoderListener->onDecodedGraphicBuffer(buffer);
+            return true;
+        } else {
+            LOGE("Couldn't find the buffer in the buffer pool");
+        }
+    }
+
+    return false;
+}
+
+void DroidVideoDecoder::buffers_released(void *data)
+{
+    DroidVideoDecoder *decoder = (DroidVideoDecoder *)data;
+    decoder->m_bufferPool.clear();
+}
+
+bool DroidVideoDecoder::buffer_created(void *data, DroidMediaBuffer *buffer)
+{
+    DroidVideoDecoder *decoder = (DroidVideoDecoder *)data;
+    return decoder->m_bufferPool.bind(decoder, buffer);
+}
+
+bool DroidVideoDecoder::frame_available(void *data, DroidMediaBuffer *buffer)
+{
+    DroidVideoDecoder *decoder = (DroidVideoDecoder *)data;
+    return decoder->ProcessMediaBuffer(buffer);
 }
 
 // This is called when the user has not provided a release callback.
@@ -630,22 +720,30 @@ bool DroidVideoDecoder::decode(const uint8_t *data,
 void DroidVideoDecoder::drain()
 {
     LOGD("");
-    stop();
+    if (m_codec) {
+        droid_media_codec_drain(m_codec);
+    }
 }
 
 void DroidVideoDecoder::flush()
 {
     LOGD("");
-    stop();
+    if (m_codec) {
+        droid_media_codec_flush(m_codec);
+        stop();
+    }
 }
 
 void DroidVideoDecoder::stop()
 {
+    LOGD("");
     if (m_codec) {
         LOGD("");
         droid_media_codec_drain(m_codec);
+        m_mapper.reset();
         droid_media_codec_stop(m_codec);
         droid_media_codec_destroy(m_codec);
+        m_buffer_queue = nullptr;
         m_codec = nullptr;
     }
 }
@@ -666,7 +764,9 @@ void DroidVideoDecoder::configureOutput()
          << " width: " << rect.right - rect.left
          << " height: " << rect.bottom - rect.top
          << " format: " << md.hal_format);
-    m_mapper.setFormat(&md, &rect);
+    if (m_disable_media_buffers) {
+        m_mapper.setFormat(&md, &rect);
+    }
 }
 
 void DroidVideoDecoder::error(string errorDescription)
@@ -681,8 +781,8 @@ void DroidVideoDecoder::error(string errorDescription)
 void DroidVideoDecoder::dataAvailable(DroidMediaCodecData *decoded)
 {
     if (m_decoderListener && m_mapper.ready()) {
-        gecko::camera::YCbCrFrame frame = m_mapper.mapYcbCr(decoded);
-        m_decoderListener->onDecodedFrame(frame);
+        const YCbCrFrame frame = m_mapper.mapYCbCr(decoded);
+        m_decoderListener->onDecodedYCbCrFrame(&frame);
     }
 }
 

@@ -1,6 +1,7 @@
 droid_plugin_source = [
   'droid-camera.cpp',
   'droid-codec.cpp',
+  'droid-common.cpp',
 ]
 
 droidmedia_dep=dependency('droidmedia', required: false)

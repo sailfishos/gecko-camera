@@ -187,15 +187,18 @@ private:
     }
 
     // Camera
-    void onCameraFrame(shared_ptr<const YCbCrFrame> frame)
+    void onCameraFrame(shared_ptr<GraphicBuffer> buffer)
     {
-        cout << "buffer at " << (const void *)frame->y
-             << " timestampUs " << frame->timestampUs
-             << "\n";
+        shared_ptr<const YCbCrFrame> frame = buffer->mapYCbCr();
+        if (frame) {
+            cout << "buffer at " << (const void *)frame->y
+                 << " timestampUs " << frame->timestampUs
+                 << "\n";
 
-        if (encoderAvailable) {
-            bool sync = !(frameNumber++ % 30);
-            videoEncoder->encode(frame, sync);
+            if (encoderAvailable) {
+                bool sync = !(frameNumber++ % 30);
+                videoEncoder->encode(frame, sync);
+            }
         }
     }
 
@@ -226,16 +229,27 @@ private:
     }
 
     // Decoder
-    void onDecodedFrame(gecko::camera::YCbCrFrame frame)
+    void onDecodedYCbCrFrame(const gecko::camera::YCbCrFrame *frame)
     {
-        cout << "*Decoded buffer at " << (const void *)frame.y
-             << " cb=" << (const void *)frame.cb
-             << " cr=" << (const void *)frame.cr
-             << " yStride=" << frame.yStride
-             << " cStride=" << frame.cStride
-             << " chromaStep=" << frame.chromaStep
-             << " timestampUs " << frame.timestampUs
+        cout << "*Decoded buffer at " << (const void *)frame->y
+             << " cb=" << (const void *)frame->cb
+             << " cr=" << (const void *)frame->cr
+             << " yStride=" << frame->yStride
+             << " cStride=" << frame->cStride
+             << " chromaStep=" << frame->chromaStep
+             << " timestampUs " << frame->timestampUs
              << "\n";
+    }
+
+    void onDecodedGraphicBuffer(std::shared_ptr<gecko::camera::GraphicBuffer> buffer)
+    {
+        cout << "GraphicBuffer received" << "\n";
+        shared_ptr<const YCbCrFrame> frame = buffer->mapYCbCr();
+        if (frame) {
+            onDecodedYCbCrFrame(frame.get());
+        } else {
+            cerr << "Couldn't map GraphicBuffer\n";
+        }
     }
 
     void onDecoderError(std::string errorDescription)
