@@ -16,6 +16,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <cstring>
+#include <algorithm>
+#include <fstream>
+
 #include "geckocamera-utils.h"
 #include "droid-common.h"
 
@@ -164,6 +168,79 @@ shared_ptr<GraphicBuffer> DroidGraphicBufferPool::acquire(DroidMediaBuffer *buff
 void DroidGraphicBufferPool::clear()
 {
     m_items.clear();
+}
+
+class DroidSystemInfoImpl : public DroidSystemInfo
+{
+public:
+    void update()
+    {
+        if (!m_initialized) {
+            readCpuInfo();
+            m_initialized = true;
+        }
+    }
+
+private:
+    static void lstrip(string &s)
+    {
+        s.erase(s.begin(),
+                find_if(s.begin(), s.end(), [](unsigned char c) {
+                    return !isspace(c);
+                }));
+    }
+
+    static bool startswith(string &s, string subs)
+    {
+        return s.find(subs) == 0;
+    }
+
+    static CpuVendor guessCpuVendor(string line) {
+        size_t sep = line.find(":", 8);
+        if (sep != string::npos) {
+            line.erase(0, sep + 1);
+            lstrip(line);
+            if (startswith(line, "MT")) {
+                return CpuVendor::MediaTek;
+            } else if (startswith(line, "Qualcomm")) {
+                return CpuVendor::Qualcomm;
+            }
+        }
+        return CpuVendor::Unknown;
+    }
+
+    bool readCpuInfo()
+    {
+        string line;
+        ifstream cpuinfo("/proc/cpuinfo");
+        if (cpuinfo.is_open())  {
+            while (getline(cpuinfo, line)) {
+                if (startswith(line, "Hardware")) {
+                    cpuVendor = guessCpuVendor(line);
+                }
+            }
+            cpuinfo.close();
+            return true;
+        }
+        return false;
+    }
+
+    bool m_initialized = false;
+};
+
+// static
+DroidSystemInfo& DroidSystemInfo::get()
+{
+    static DroidSystemInfoImpl instance;
+    instance.update();
+    return instance;
+}
+
+// static
+bool DroidSystemInfo::envIsSet(const char *env)
+{
+    const char *envValue = getenv(env);
+    return envValue && strcmp(envValue, "0") && strcmp(envValue, "");
 }
 
 /* vim: set ts=4 et sw=4 tw=80: */
