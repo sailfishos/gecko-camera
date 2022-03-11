@@ -334,6 +334,7 @@ bool DroidVideoEncoder::init(VideoEncoderMetadata metadata)
     m_metadata.stride = metadata.stride;
     m_metadata.slice_height = metadata.sliceHeight;
     m_metadata.meta_data = false;
+    m_metadata.bitrate_mode = DROID_MEDIA_CODEC_BITRATE_CONTROL_CBR;
 
     droid_media_colour_format_constants_init (&m_constants);
     m_metadata.color_format = -1;
