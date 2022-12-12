@@ -30,7 +30,7 @@ Requires:       gecko-camera = %{version}-%{release}
 
 %build
 %meson -Dbuild-tests=false
-meson rewrite kwargs set project / version %{version}-%{release}
+meson rewrite kwargs set project / version %{version}
 %meson_build
 
 %install
