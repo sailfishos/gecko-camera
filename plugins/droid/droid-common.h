@@ -121,6 +121,18 @@ private:
     std::vector<std::shared_ptr<Item>> m_items;
 };
 
+struct DroidSystemInfo {
+    enum CpuVendor {
+        MediaTek,
+        Qualcomm,
+        Unknown
+    };
+    CpuVendor cpuVendor = CpuVendor::Unknown;
+
+    static DroidSystemInfo& get();
+    static bool envIsSet(const char *env);
+};
+
 } // namespace camera
 } // namespace gecko
 

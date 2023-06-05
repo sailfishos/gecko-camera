@@ -134,7 +134,7 @@ public:
     bool createVideoEncoder(CodecType codecType, shared_ptr<VideoEncoder> &encoder);
     bool createVideoDecoder(CodecType codecType, shared_ptr<VideoDecoder> &decoder);
 
-    static bool optionNoMediaBuffer();
+    static bool optionUseMediaBuffers();
 };
 
 class DroidVideoEncoder : public VideoEncoder
@@ -209,7 +209,7 @@ private:
     DroidMediaCodec *m_codec = nullptr;
     DroidVideoFrameYUVMapper m_mapper;
     DroidMediaBufferQueue *m_buffer_queue = nullptr;
-    bool m_disable_media_buffers = false;
+    bool m_use_media_buffers = false;
     DroidGraphicBufferPool m_bufferPool;
 };
 
@@ -240,11 +240,11 @@ bool DroidCodecManager::videoDecoderAvailable(CodecType codecType)
     DroidMediaCodecMetaData metadata;
 
     memset(&metadata, 0x0, sizeof (metadata));
-    if (optionNoMediaBuffer()) {
+    if (optionUseMediaBuffers()) {
+        metadata.flags = static_cast<DroidMediaCodecFlags>(DROID_MEDIA_CODEC_HW_ONLY);
+    } else {
         metadata.flags = static_cast<DroidMediaCodecFlags>(DROID_MEDIA_CODEC_HW_ONLY |
                                                            DROID_MEDIA_CODEC_NO_MEDIA_BUFFER);
-    } else {
-        metadata.flags = static_cast<DroidMediaCodecFlags>(DROID_MEDIA_CODEC_HW_ONLY);
     }
     metadata.type = codecTypeToDroidMime(codecType);
 
@@ -272,16 +272,21 @@ bool DroidCodecManager::createVideoDecoder(CodecType codecType, shared_ptr<Video
 }
 
 // static
-bool DroidCodecManager::optionNoMediaBuffer()
+bool DroidCodecManager::optionUseMediaBuffers()
 {
-    const char *envValue = getenv("GECKO_CAMERA_DROID_NO_MEDIA_BUFFER");
+    if (DroidSystemInfo::envIsSet("GECKO_CAMERA_DROID_NO_MEDIA_BUFFER")) {
+        return false;
+    }
+    if (DroidSystemInfo::envIsSet("GECKO_CAMERA_DROID_FORCE_MEDIA_BUFFER")) {
+        return true;
+    }
 
     DroidMediaColourFormatConstants c;
     droid_media_colour_format_constants_init (&c);
 
     // droidmedia on Android < 5 reports OMX_COLOR_FormatYUV420Flexible as 0
-    return c.OMX_COLOR_FormatYUV420Flexible == 0
-           || (envValue && strcmp(envValue, "0") && strcmp(envValue, ""));
+    return c.OMX_COLOR_FormatYUV420Flexible != 0
+        && DroidSystemInfo::get().cpuVendor == DroidSystemInfo::CpuVendor::MediaTek;
 }
 
 DroidVideoEncoder::DroidVideoEncoder(CodecType codecType)
@@ -334,6 +339,7 @@ bool DroidVideoEncoder::init(VideoEncoderMetadata metadata)
     m_metadata.stride = metadata.stride;
     m_metadata.slice_height = metadata.sliceHeight;
     m_metadata.meta_data = false;
+    m_metadata.bitrate_mode = DROID_MEDIA_CODEC_BITRATE_CONTROL_CBR;
 
     droid_media_colour_format_constants_init (&m_constants);
     m_metadata.color_format = -1;
@@ -544,9 +550,9 @@ DroidVideoDecoder::~DroidVideoDecoder()
 bool DroidVideoDecoder::init(VideoDecoderMetadata metadata)
 {
     memset (&m_metadata, 0x0, sizeof (m_metadata));
-    m_disable_media_buffers = DroidCodecManager::optionNoMediaBuffer();
+    m_use_media_buffers = DroidCodecManager::optionUseMediaBuffers();
 
-    if (!m_disable_media_buffers) {
+    if (m_use_media_buffers) {
         DroidMediaColourFormatConstants c;
         droid_media_colour_format_constants_init (&c);
         m_metadata.color_format = c.OMX_COLOR_FormatYUV420Flexible;
@@ -614,8 +620,8 @@ bool DroidVideoDecoder::createCodec()
         droid_media_codec_set_callbacks(m_codec, &cb, this);
     }
 
-    m_buffer_queue = m_disable_media_buffers ? nullptr :
-                            droid_media_codec_get_buffer_queue(m_codec);
+    m_buffer_queue = m_use_media_buffers ?
+                    droid_media_codec_get_buffer_queue(m_codec) : nullptr;
     if (m_buffer_queue) {
         LOGI("Using media buffers");
         DroidMediaBufferQueueCallbacks cb;
@@ -630,6 +636,7 @@ bool DroidVideoDecoder::createCodec()
         memset(&cb, 0, sizeof(cb));
         cb.data_available = DroidVideoDecoder::data_available_cb;
         droid_media_codec_set_data_callbacks(m_codec, &cb, this);
+        m_use_media_buffers = false;
     }
 
     if (!droid_media_codec_start (m_codec)) {
@@ -764,7 +771,7 @@ void DroidVideoDecoder::configureOutput()
          << " width: " << rect.right - rect.left
          << " height: " << rect.bottom - rect.top
          << " format: " << md.hal_format);
-    if (m_disable_media_buffers) {
+    if (!m_use_media_buffers) {
         m_mapper.setFormat(&md, &rect);
     }
 }
