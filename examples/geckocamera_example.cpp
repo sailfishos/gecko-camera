@@ -39,6 +39,7 @@ public:
         : cameraManager(gecko_camera_manager())
         , codecManager(gecko_codec_manager())
         , encoderAvailable(false)
+        , decoderAvailable(false)
         , frameNumber(0)
     {
     }

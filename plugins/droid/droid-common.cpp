@@ -190,7 +190,7 @@ private:
                 }));
     }
 
-    static bool startswith(string &s, string subs)
+    static bool startswith(const string &s, const string &subs)
     {
         return s.find(subs) == 0;
     }

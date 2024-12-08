@@ -33,17 +33,17 @@ public:
     explicit DummyCameraManager() {}
     ~DummyCameraManager() {}
 
-    bool init()
+    bool init() override
     {
         return true;
     }
 
-    int getNumberOfCameras()
+    int getNumberOfCameras() override
     {
         return 1;
     }
 
-    bool getCameraInfo(unsigned int num, CameraInfo &info)
+    bool getCameraInfo(unsigned int num, CameraInfo &info) override
     {
         info.name = "Dummy camera";
         info.id = "dummy:rear";
@@ -52,17 +52,17 @@ public:
         return true;
     }
 
-    bool queryCapabilities(string cameraId,
-                           vector<CameraCapability> &caps);
+    bool queryCapabilities(const string &cameraId,
+                           vector<CameraCapability> &caps) override;
 
-    bool openCamera(string cameraId, shared_ptr<Camera> &camera);
+    bool openCamera(const string &cameraId, shared_ptr<Camera> &camera) override;
 };
 
 class DummyCameraFrame : public YCbCrFrame
 {
 public:
     explicit DummyCameraFrame(shared_ptr<DummyCamera> camera,
-                              unsigned int phase, uint64_t timestampUs);
+                              unsigned int phase, uint64_t timestamp);
     ~DummyCameraFrame()
     {
     }
@@ -201,7 +201,7 @@ private:
     uint8_t m_frameData[m_width * m_height + m_maxOffset];
 };
 
-bool DummyCameraManager::queryCapabilities(string cameraId,
+bool DummyCameraManager::queryCapabilities(const string &cameraId,
                                            vector<CameraCapability> &caps)
 {
     auto camera = DummyCamera::create(this);
@@ -211,7 +211,7 @@ bool DummyCameraManager::queryCapabilities(string cameraId,
     return false;
 }
 
-bool DummyCameraManager::openCamera(string cameraId, shared_ptr<Camera> &camera)
+bool DummyCameraManager::openCamera(const string &cameraId, shared_ptr<Camera> &camera)
 {
     auto dummyCamera = DummyCamera::create(this);
     if (dummyCamera->open()) {

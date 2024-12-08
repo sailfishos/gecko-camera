@@ -36,11 +36,11 @@ public:
     RootCameraManager() {}
     ~RootCameraManager() {}
 
-    bool init();
-    int getNumberOfCameras();
-    bool getCameraInfo(unsigned int num, CameraInfo &info);
-    bool queryCapabilities(const string cameraId, vector<CameraCapability> &caps);
-    bool openCamera(const string cameraId, shared_ptr<Camera> &camera);
+    bool init() override;
+    int getNumberOfCameras() override;
+    bool getCameraInfo(unsigned int num, CameraInfo &info) override;
+    bool queryCapabilities(const string &cameraId, vector<CameraCapability> &caps) override;
+    bool openCamera(const string &cameraId, shared_ptr<Camera> &camera) override;
 
 private:
     void findCameras();
@@ -85,7 +85,7 @@ bool RootCameraManager::getCameraInfo(unsigned int num, CameraInfo &info)
 }
 
 bool RootCameraManager::queryCapabilities(
-    const string cameraId,
+    const string &cameraId,
     vector<CameraCapability> &caps)
 {
     auto iter = m_cameraIdMap.find(cameraId);
@@ -96,7 +96,7 @@ bool RootCameraManager::queryCapabilities(
     return false;
 }
 
-bool RootCameraManager::openCamera(const string cameraId, shared_ptr<Camera> &camera)
+bool RootCameraManager::openCamera(const string &cameraId, shared_ptr<Camera> &camera)
 {
     auto iter = m_cameraIdMap.find(cameraId);
     if (iter != m_cameraIdMap.end()) {

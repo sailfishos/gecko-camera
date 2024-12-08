@@ -39,13 +39,13 @@ public:
     RootCodecManager() {};
     ~RootCodecManager() {};
 
-    bool init();
+    bool init() override;
 
-    bool videoEncoderAvailable(CodecType codecType);
-    bool videoDecoderAvailable(CodecType codecType);
+    bool videoEncoderAvailable(CodecType codecType) override;
+    bool videoDecoderAvailable(CodecType codecType) override;
 
-    bool createVideoEncoder(CodecType codecType, shared_ptr<VideoEncoder> &encoder);
-    bool createVideoDecoder(CodecType codecType, shared_ptr<VideoDecoder> &decoder);
+    bool createVideoEncoder(CodecType codecType, shared_ptr<VideoEncoder> &encoder) override;
+    bool createVideoDecoder(CodecType codecType, shared_ptr<VideoDecoder> &decoder) override;
 
 private:
     shared_ptr<CodecManager> loadPlugin(Plugin &plugin);
