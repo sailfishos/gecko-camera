@@ -33,7 +33,7 @@ static bool logInitialized = false;
 class SysLogBuffer : public basic_streambuf<char, char_traits<char>>
 {
 public:
-    explicit SysLogBuffer(string ident, LogLevel level)
+    explicit SysLogBuffer(const string &ident, LogLevel level)
         : logLevel(level)
         , lineLevel(LogDebug)
     {

@@ -95,7 +95,7 @@ public:
         return true;
     }
 
-    YCbCrFrame mapYCbCr(DroidMediaCodecData *decoded)
+    YCbCrFrame mapYCbCr(DroidMediaCodecData *decoded) const
     {
         YCbCrFrame frame = m_template;
         uint8_t *data = static_cast<uint8_t *>(decoded->data.data);
@@ -106,7 +106,7 @@ public:
         return frame;
     }
 
-    bool ready()
+    bool ready() const
     {
         return m_ready;
     }
@@ -189,7 +189,7 @@ public:
     void configureOutput();
     void error(string errorDescription);
 
-    bool ProcessMediaBuffer(DroidMediaBuffer *buffer);
+    bool ProcessMediaBuffer(DroidMediaBuffer *droidBuffer);
 
 private:
     bool createCodec();

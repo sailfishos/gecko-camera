@@ -121,9 +121,9 @@ public:
     virtual bool init() = 0;
     virtual int getNumberOfCameras() = 0;
     virtual bool getCameraInfo(unsigned int num, CameraInfo &info) = 0;
-    virtual bool queryCapabilities(const std::string cameraId,
+    virtual bool queryCapabilities(const std::string &cameraId,
                                    std::vector<CameraCapability> &caps) = 0;
-    virtual bool openCamera(const std::string cameraId, std::shared_ptr<Camera> &camera) = 0;
+    virtual bool openCamera(const std::string &cameraId, std::shared_ptr<Camera> &camera) = 0;
 };
 
 }

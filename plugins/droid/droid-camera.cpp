@@ -53,17 +53,17 @@ public:
     bool init();
     int getNumberOfCameras();
     bool getCameraInfo(unsigned int num, CameraInfo &info);
-    bool queryCapabilities(string cameraId,
+    bool queryCapabilities(const string &cameraId,
                            vector<CameraCapability> &caps);
-    bool openCamera(string cameraId, shared_ptr<Camera> &camera);
+    bool openCamera(const string &cameraId, shared_ptr<Camera> &camera);
 
-    bool getCaptureAccess(shared_ptr<DroidCamera>, bool exclusiveAccess);
+    bool getCaptureAccess(shared_ptr<DroidCamera>, bool exclusive);
 
 private:
     bool initialized = false;
     vector<DroidCameraItem> cameraList;
     bool findCameras();
-    int cameraIndexById(string cameraId) const;
+    int cameraIndexById(const string &cameraId) const;
     mutex managerLock;
 };
 
@@ -164,13 +164,13 @@ public:
     {
         return make_shared<DroidCameraParams>(params);
     }
-    explicit DroidCameraParams(string params);
+    explicit DroidCameraParams(string inp);
     ~DroidCameraParams() {};
-    string getValue(string key);
-    vector<string> getValues(string key);
-    bool setValue(string key, string value);
+    string getValue(const string &key);
+    vector<string> getValues(const string &key);
+    bool setValue(const string &key, const string &value);
     bool setCapability(CameraCapability cap);
-    string toString();
+    string toString() const;
     CameraCapability currentCapability;
     DroidMediaBufferYCbCr ycbcrTemplate;
 
@@ -225,7 +225,7 @@ bool DroidCameraManager::getCameraInfo(unsigned int num, CameraInfo &info)
     return false;
 }
 
-int DroidCameraManager::cameraIndexById(string cameraId) const
+int DroidCameraManager::cameraIndexById(const string &cameraId) const
 {
     int num = 0;
     for (auto entry : cameraList) {
@@ -238,7 +238,7 @@ int DroidCameraManager::cameraIndexById(string cameraId) const
 }
 
 bool DroidCameraManager::queryCapabilities(
-    string cameraId,
+    const string &cameraId,
     vector<CameraCapability> &caps)
 {
     int num = cameraIndexById(cameraId);
@@ -258,7 +258,7 @@ bool DroidCameraManager::queryCapabilities(
     return false;
 }
 
-bool DroidCameraManager::openCamera(string cameraId, shared_ptr<Camera> &camera)
+bool DroidCameraManager::openCamera(const string &cameraId, shared_ptr<Camera> &camera)
 {
     int num = cameraIndexById(cameraId);
     if (num >= 0) {
@@ -287,8 +287,8 @@ bool DroidCameraManager::getCaptureAccess(shared_ptr<DroidCamera> camera, bool e
         }
     }
 
-    size_t num = camera->getNumber();
-    if (num >= 0 && num < cameraList.size()) {
+    int num = camera->getNumber();
+    if (num >= 0 && num < (int)cameraList.size()) {
         DroidCameraItem &entry = cameraList.at(num);
         shared_ptr<DroidCamera> runningCamera = entry.runningInstance.lock();
         if (runningCamera && runningCamera != camera) {
@@ -633,14 +633,14 @@ DroidCameraGraphicBuffer::~DroidCameraGraphicBuffer()
 
 DroidCameraParams::DroidCameraParams(string inp)
 {
-    size_t pos = 0, nextPos, eqsPos;
+    size_t pos = 0, nextPos;
     const string delimiter = ";";
 
     LOGD(inp);
 
     while ((nextPos = inp.find(delimiter, pos)) != string::npos) {
         string token = inp.substr(pos, nextPos - pos);
-        eqsPos = token.find("=");
+        size_t eqsPos = token.find("=");
         string key = token.substr(0, eqsPos);
         string value = token.substr(eqsPos + 1);
         params.insert_or_assign(key, value);
@@ -649,7 +649,7 @@ DroidCameraParams::DroidCameraParams(string inp)
     }
 }
 
-string DroidCameraParams::getValue(string key)
+string DroidCameraParams::getValue(const string &key)
 {
     auto val = params.find(key);
     if (val == params.end()) {
@@ -659,7 +659,7 @@ string DroidCameraParams::getValue(string key)
     }
 }
 
-vector<string> DroidCameraParams::getValues(string key)
+vector<string> DroidCameraParams::getValues(const string &key)
 {
     string valStr = getValue(key);
     vector<string> vals;
@@ -674,7 +674,7 @@ vector<string> DroidCameraParams::getValues(string key)
     return vals;
 }
 
-string DroidCameraParams::toString()
+string DroidCameraParams::toString() const
 {
     ostringstream buffer;
     for (auto const& [key, val] : params) {
@@ -683,7 +683,7 @@ string DroidCameraParams::toString()
     return buffer.str();
 }
 
-bool DroidCameraParams::setValue(string key, string value)
+bool DroidCameraParams::setValue(const string &key, const string &value)
 {
     auto it = params.find(key);
     if (it != params.end()) {
