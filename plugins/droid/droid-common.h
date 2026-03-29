@@ -125,6 +125,7 @@ struct DroidSystemInfo {
     enum CpuVendor {
         MediaTek,
         Qualcomm,
+        Unisoc,
         Unknown
     };
     CpuVendor cpuVendor = CpuVendor::Unknown;

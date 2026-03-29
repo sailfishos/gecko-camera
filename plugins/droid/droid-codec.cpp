@@ -286,7 +286,8 @@ bool DroidCodecManager::optionUseMediaBuffers()
 
     // droidmedia on Android < 5 reports OMX_COLOR_FormatYUV420Flexible as 0
     return c.OMX_COLOR_FormatYUV420Flexible != 0
-        && DroidSystemInfo::get().cpuVendor == DroidSystemInfo::CpuVendor::MediaTek;
+        && (DroidSystemInfo::get().cpuVendor == DroidSystemInfo::CpuVendor::MediaTek
+            || DroidSystemInfo::get().cpuVendor == DroidSystemInfo::CpuVendor::Unisoc);
 }
 
 DroidVideoEncoder::DroidVideoEncoder(CodecType codecType)
