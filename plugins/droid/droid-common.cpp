@@ -204,6 +204,8 @@ private:
                 return CpuVendor::MediaTek;
             } else if (startswith(line, "Qualcomm")) {
                 return CpuVendor::Qualcomm;
+            } else if (startswith(line, "Unisoc")) {
+                return CpuVendor::Unisoc;
             }
         }
         return CpuVendor::Unknown;
