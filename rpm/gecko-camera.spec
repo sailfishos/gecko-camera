@@ -1,6 +1,6 @@
 Name:           gecko-camera
 Summary:        A plugin-based library for Gecko to simplify video capture
-Version:        0.1
+Version:        0.2.0
 Release:        1
 License:        LGPLv2+
 URL:            https://github.com/sailfishos/gecko-camera
