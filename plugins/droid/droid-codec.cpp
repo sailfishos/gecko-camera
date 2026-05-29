@@ -19,6 +19,7 @@
 #include <cstring>
 #include <sstream>
 #include <functional>
+#include <algorithm>
 
 #include <geckocamera-codec.h>
 #include <droidmediacodec.h>
@@ -62,35 +63,58 @@ public:
         DroidMediaColourFormatConstants c;
         droid_media_colour_format_constants_init(&c);
 
-        m_template.y = 0;
+        reset();
+        m_yOffset = 0;
+        m_requiredSize = 0;
         m_template.width = md->width;
         m_template.height = rect->bottom - rect->top;
 #define _ALIGN_SIZE(sz, align) (((sz) + (align) - 1) & ~((align) - 1))
         if (md->hal_format == c.QOMX_COLOR_FormatYUV420PackedSemiPlanar32m) {
             unsigned int height = _ALIGN_SIZE(md->height, 32);
             m_template.yStride = m_template.cStride = _ALIGN_SIZE(md->width, 128);
-            m_template.cb = (const uint8_t *)(m_template.yStride * height);
-            m_template.cr = (const uint8_t *)(m_template.yStride * height + 1);
+            m_cbOffset = m_template.yStride * height;
+            m_crOffset = m_cbOffset + 1;
             m_template.chromaStep = 2;
         } else if (md->hal_format == c.OMX_COLOR_FormatYUV420SemiPlanar) {
             uint32_t height = md->height;
             m_template.yStride = m_template.cStride = _ALIGN_SIZE(md->width, 16);
-            m_template.cb = (const uint8_t *)(m_template.yStride * height);
-            m_template.cr = (const uint8_t *)(m_template.yStride * height + 1);
+            m_cbOffset = m_template.yStride * height;
+            m_crOffset = m_cbOffset + 1;
             m_template.chromaStep = 2;
         } else if (md->hal_format == c.OMX_COLOR_FormatYUV420Planar) {
-            uint32_t height = _ALIGN_SIZE(md->height, 4);
+            // md->height is the decoder-reported slice height. Aligning it
+            // again can move the chroma planes past compact I420 buffers.
+            uint32_t height = md->height;
             m_template.yStride = md->width;
             m_template.cStride = md->width / 2;
-            m_template.cb = (const uint8_t *)(m_template.yStride * height);
-            m_template.cr = (const uint8_t *)(m_template.yStride * height
-                                              + (m_template.yStride * height) / 4);
+            m_cbOffset = m_template.yStride * height;
+            m_crOffset = m_cbOffset + (m_template.yStride * height) / 4;
             m_template.chromaStep = 1;
         } else {
             LOGE("Unsupported color format " << md->hal_format);
             return false;
         }
 #undef _ALIGN_SIZE
+        m_template.y = reinterpret_cast<const uint8_t *>(m_yOffset);
+        m_template.cb = reinterpret_cast<const uint8_t *>(m_cbOffset);
+        m_template.cr = reinterpret_cast<const uint8_t *>(m_crOffset);
+        m_requiredSize = requiredPlaneSize(m_yOffset,
+                                           m_template.yStride,
+                                           m_template.width,
+                                           m_template.height,
+                                           1);
+        m_requiredSize = max(m_requiredSize,
+                             requiredPlaneSize(m_cbOffset,
+                                               m_template.cStride,
+                                               (m_template.width + 1) / 2,
+                                               (m_template.height + 1) / 2,
+                                               m_template.chromaStep));
+        m_requiredSize = max(m_requiredSize,
+                             requiredPlaneSize(m_crOffset,
+                                               m_template.cStride,
+                                               (m_template.width + 1) / 2,
+                                               (m_template.height + 1) / 2,
+                                               m_template.chromaStep));
         m_ready = true;
         return true;
     }
@@ -106,6 +130,11 @@ public:
         return frame;
     }
 
+    size_t requiredSize() const
+    {
+        return m_requiredSize;
+    }
+
     bool ready() const
     {
         return m_ready;
@@ -117,7 +146,23 @@ public:
     }
 
 private:
+    static size_t requiredPlaneSize(size_t offset,
+                                    uint16_t stride,
+                                    uint16_t width,
+                                    uint16_t height,
+                                    uint16_t step)
+    {
+        if (!width || !height) {
+            return offset;
+        }
+        return offset + (height - 1) * stride + (width - 1) * step + 1;
+    }
+
     YCbCrFrame m_template;
+    size_t m_yOffset = 0;
+    size_t m_cbOffset = 0;
+    size_t m_crOffset = 0;
+    size_t m_requiredSize = 0;
     bool m_ready;
 };
 
@@ -789,6 +834,13 @@ void DroidVideoDecoder::error(string errorDescription)
 void DroidVideoDecoder::dataAvailable(DroidMediaCodecData *decoded)
 {
     if (m_decoderListener && m_mapper.ready()) {
+        if (!decoded->data.data || decoded->data.size < m_mapper.requiredSize()) {
+            ostringstream errorDesc;
+            errorDesc << "Decoded buffer too small: " << decoded->data.size
+                      << " bytes, need at least " << m_mapper.requiredSize();
+            error(errorDesc.str());
+            return;
+        }
         const YCbCrFrame frame = m_mapper.mapYCbCr(decoded);
         m_decoderListener->onDecodedYCbCrFrame(&frame);
     }
@@ -811,6 +863,11 @@ int DroidVideoDecoder::size_changed_cb(void *data, int32_t width, int32_t height
 void DroidVideoDecoder::signal_eos_cb(void *data)
 {
     LOGI("Decoder EOS");
+
+    DroidVideoDecoder *decoder = static_cast<DroidVideoDecoder *>(data);
+    if (decoder && decoder->m_decoderListener) {
+        decoder->m_decoderListener->onDecoderEOS();
+    }
 }
 
 void DroidVideoDecoder::error_cb(void *data, int err)

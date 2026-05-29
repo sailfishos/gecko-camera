@@ -1,6 +1,6 @@
 Name:           gecko-camera-droid-plugin
 Summary:        A droidmedia-based plugin for gecko-camera
-Version:        0.1
+Version:        0.2.0
 Release:        1
 License:        LGPLv2+
 URL:            https://github.com/sailfishos/gecko-camera
